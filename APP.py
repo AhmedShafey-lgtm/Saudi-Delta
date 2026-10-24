@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
+import io
 
 # إعدادات الصفحة الرئيسية
 st.set_page_config(
@@ -11,11 +11,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# تنسيق CSS لدعم العربية وتمييز الجداول المالية
+# تنسيق CSS لدعم اللغة العربية وتنسيق الجداول المالية
 st.markdown("""
 <style>
     .main { direction: rtl; text-align: right; }
-    div[data-testid="stMetricValue"] { font-size: 1.45rem; font-weight: bold; color: #1E3A8A; }
+    div[data-testid="stMetricValue"] { font-size: 1.4rem; font-weight: bold; color: #1E3A8A; }
     div[data-testid="stMetricLabel"] { font-size: 0.95rem; font-weight: 600; }
     th { text-align: right !important; background-color: #1E3A8A !important; color: white !important; }
     td { text-align: right !important; font-family: 'Segoe UI', Tahoma, sans-serif; }
@@ -23,26 +23,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 منصة التقارير المالية والإدارية التنفيذية")
-st.markdown("### شركة دلتا السعودية لمشاريع الطاقة المحدودة | القوائم المالية وموقف المشاريع (2021 – 30 سبتمبر 2026)")
+st.markdown("### شركة دلتا السعودية لمشاريع الطاقة المحدودة | القوائم المالية وموقف المشاريع والإسناد (2021 – 2026)")
 st.markdown("---")
 
-# الشريط الجانبي للمدخلات والمحاكاة
-st.sidebar.header("⚙️ إدارة البيانات والمدخلات")
-uploaded_file = st.sidebar.file_uploader("رفع ملف ميزان المراجعة أو المشاريع (Excel)", type=["xlsx", "csv"])
+# ==========================================
+# الشريط الجانبي: 3 منافذ لرفع وتحديث البيانات تلقائياً
+# ==========================================
+st.sidebar.header("⚙️ مركز رفع وتحديث البيانات")
+
+uploaded_tb = st.sidebar.file_uploader("1️⃣ رفع ميزان المراجعة العام (Excel/CSV)", type=["xlsx", "csv"], key="tb_up")
+uploaded_proj_pl = st.sidebar.file_uploader("2️⃣ رفع تحديث قوائم دخل المشاريع (Excel)", type=["xlsx"], key="proj_up")
+uploaded_assign = st.sidebar.file_uploader("3️⃣ رفع ملفات الإسناد والتنفيذ للمواقع (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True, key="assign_up")
 
 st.sidebar.markdown("---")
-st.sidebar.header("🎯 محاكي التنفيذ الفعلي العام (2026)")
-actual_revenue_input = st.sidebar.number_input(
-    "إيرادات التنفيذ الفعلي المعتمدة للشركة (ريال)",
-    value=221603598.0,
-    step=1000000.0,
+st.sidebar.header("🎯 إعدادات التنفيذ والإيراد المؤجل (2026)")
+deferred_rev_2025 = st.sidebar.number_input(
+    "الإيراد المؤجل المرحل من 2025 (ريال)",
+    value=14697741.0,
+    step=100000.0,
     format="%.0f"
 )
-
-if uploaded_file is not None:
-    st.sidebar.success("✅ تم ربط وقراءة الملف بنجاح!")
-else:
-    st.sidebar.info("💡 تعمل المنصة بالبيانات التاريخية المعتمدة (2021–2026).")
 
 # ==========================================
 # دالة تنسيق الجداول المحاسبية الملونة
@@ -86,12 +86,12 @@ def build_styled_table(rows_spec, columns):
     return df.style.apply(apply_row_styles, axis=1)
 
 # ==========================================
-# قاعدة بيانات المشاريع التاريخية (2021 - 2026) حسب ترتيب النموذج
+# قاعدة بيانات المشاريع الافتراضية (2021 - 2026) مع الإيراد المؤجل
 # ==========================================
 PROJECTS_DB = {
     "منطقة تبوك": {
         "rev_shamel": [30494576.80, 55590488.50, 58830613.91, 38962744.10, 62071999.83, 32927965.95],
-        "team_2026": 39170853.0, "sub_2026": 0.0,
+        "team_2026": 39170853.0, "sub_2026": 0.0, "def_2026": 0.0,
         "other_rev": [58075.53, 64998.00, 207098.00, 879.04, 311282.35, 102776.00],
         "salaries": [15343112.19, 23814297.29, 24523939.80, 22906038.29, 24966561.27, 21154079.00],
         "direct_cost": [2354035.82, 14337400.02, 5968127.02, 5166787.56, 5456287.78, 5923938.97],
@@ -104,7 +104,7 @@ PROJECTS_DB = {
     },
     "منطقة الباحة": {
         "rev_shamel": [37273063.51, 47362597.64, 73947310.75, 95237586.94, 93985647.97, 64319949.49],
-        "team_2026": 48216447.0, "sub_2026": 11108513.0,
+        "team_2026": 48216447.0, "sub_2026": 11108513.0, "def_2026": 0.0,
         "other_rev": [157497.00, 49999.00, 107498.00, -24108.35, 328618.00, 0.00],
         "salaries": [26359725.26, 34689531.70, 37254952.58, 41292294.79, 43852993.52, 33119988.46],
         "direct_cost": [2704085.36, 8454842.50, 19130893.92, 11981235.00, 13306501.24, 12465744.92],
@@ -117,7 +117,7 @@ PROJECTS_DB = {
     },
     "منطقة عسير": {
         "rev_shamel": [33453858.65, 56568847.84, 65533857.79, 58230974.92, 59188116.81, 19930136.36],
-        "team_2026": 34935777.0, "sub_2026": 1131278.0,
+        "team_2026": 34935777.0, "sub_2026": 1131278.0, "def_2026": 0.0,
         "other_rev": [23470.00, 26589.00, 0.00, 0.00, 250780.88, 125998.00],
         "salaries": [9904956.62, 24380617.39, 27796352.54, 27737697.96, 30034753.73, 21024829.00],
         "direct_cost": [10511060.37, 6357213.14, 10148504.50, 9150416.93, 6786415.59, 4985460.00],
@@ -130,7 +130,7 @@ PROJECTS_DB = {
     },
     "منطقة مكة المكرمة": {
         "rev_shamel": [37721414.63, 60079194.41, 71013929.94, 69395329.72, 64070292.50, 50675386.70],
-        "team_2026": 41676603.0, "sub_2026": 12698389.0,
+        "team_2026": 41676603.0, "sub_2026": 12698389.0, "def_2026": 0.0,
         "other_rev": [86298.00, 608448.00, 65147.00, 94083.75, 226932.91, 15000.00],
         "salaries": [19970457.80, 26352076.37, 29919403.60, 36155601.83, 35246122.33, 23158831.97],
         "direct_cost": [4770266.96, 9603292.21, 12235744.74, 8924052.56, 14988709.96, 14106583.67],
@@ -143,7 +143,7 @@ PROJECTS_DB = {
     },
     "الرياض": {
         "rev_shamel": [22570183.72, 27809189.54, 30535984.00, 23273304.37, 18862668.67, 11893717.47],
-        "team_2026": 12000000.0, "sub_2026": 6000000.0,
+        "team_2026": 12000000.0, "sub_2026": 6000000.0, "def_2026": 0.0,
         "other_rev": [0.00, 178149.00, 15999.00, -11433.35, 809781.00, 0.00],
         "salaries": [5541020.12, 7226230.91, 7691894.04, 8066816.43, 9733253.23, 7828750.00],
         "direct_cost": [7010734.40, 8934468.92, 8517518.32, 10978248.47, 7665115.16, 7852975.80],
@@ -156,7 +156,7 @@ PROJECTS_DB = {
     },
     "الادارة": {
         "rev_shamel": [11343.00, 7989.00, -19020039.00, 3699862.92, 635106.00, 14665738.00],
-        "team_2026": 14665738.0, "sub_2026": 0.0,
+        "team_2026": 0.0, "sub_2026": 0.0, "def_2026": deferred_rev_2025,
         "other_rev": [2311344.63, 400356.59, 1816218.19, 7686617.95, 1667604.00, 0.00],
         "salaries": [7450916.66, 7373959.37, 13910202.20, 11475820.96, 5505723.37, 0.00],
         "direct_cost": [52409.34, 63397.04, 4875.14, 2106126.00, 193541.49, 0.00],
@@ -169,25 +169,60 @@ PROJECTS_DB = {
     }
 }
 
-# حساب إجمالي المشاريع الخمسة (بدون الإدارة) وإجمالي الشركة
+# ==========================================
+# آلية تحديث قوائم دخل المشاريع ديناميكياً عند رفع ملف إكسيل جديد
+# ==========================================
+if uploaded_proj_pl is not None:
+    try:
+        xls_proj = pd.ExcelFile(uploaded_proj_pl)
+        updated_sheets = []
+        for sheet in xls_proj.sheet_names:
+            df_sh = pd.read_excel(uploaded_proj_pl, sheet_name=sheet)
+            # إذا كان الشيت مطابقاً للقالب القياسي (يحتوي على عمود Code أو البند والسنوات)
+            if "Key" in df_sh.columns:
+                target_name = sheet.strip()
+                if target_name not in PROJECTS_DB:
+                    PROJECTS_DB[target_name] = {}
+                for _, r in df_sh.iterrows():
+                    k = str(r["Key"]).strip()
+                    if k in ["team_2026", "sub_2026", "def_2026"]:
+                        PROJECTS_DB[target_name][k] = float(r.get("2026", 0.0))
+                    elif k in ["rev_shamel", "other_rev", "salaries", "direct_cost", "maint_veh", "rent_trans", "tools_cons", "ga_exp", "fin_exp", "dep_exp"]:
+                        PROJECTS_DB[target_name][k] = [float(r.get(str(yr), 0.0)) for yr in [2021, 2022, 2023, 2024, 2025, 2026]]
+                updated_sheets.append(target_name)
+        if updated_sheets:
+            st.sidebar.success(f"✅ تم تحديث قوائم دخل المشاريع: {', '.join(updated_sheets)}")
+        else:
+            st.sidebar.success("✅ تم قراءة ملف قوائم دخل المشاريع بنجاح!")
+    except Exception as e:
+        st.sidebar.error(f"خطأ في تحديث ملف المشاريع: {e}")
+
+# دالة تجميع المشاريع
 def aggregate_projects(keys_list):
     agg = {k: [0.0]*6 for k in ["rev_shamel", "other_rev", "salaries", "direct_cost", "maint_veh", "rent_trans", "tools_cons", "ga_exp", "fin_exp", "dep_exp"]}
-    agg["team_2026"] = sum(PROJECTS_DB[p]["team_2026"] for p in keys_list)
-    agg["sub_2026"] = sum(PROJECTS_DB[p]["sub_2026"] for p in keys_list)
+    agg["team_2026"] = sum(PROJECTS_DB[p].get("team_2026", 0.0) for p in keys_list if p in PROJECTS_DB)
+    agg["sub_2026"] = sum(PROJECTS_DB[p].get("sub_2026", 0.0) for p in keys_list if p in PROJECTS_DB)
+    agg["def_2026"] = sum(PROJECTS_DB[p].get("def_2026", 0.0) for p in keys_list if p in PROJECTS_DB)
     for p in keys_list:
-        for k in agg:
-            if isinstance(agg[k], list):
-                agg[k] = [agg[k][i] + PROJECTS_DB[p][k][i] for i in range(6)]
+        if p in PROJECTS_DB:
+            for k in agg:
+                if isinstance(agg[k], list):
+                    agg[k] = [agg[k][i] + PROJECTS_DB[p][k][i] for i in range(6)]
     return agg
 
-PROJECTS_DB["إجمالي المشاريع (5 مناطق)"] = aggregate_projects(["منطقة تبوك", "منطقة الباحة", "منطقة عسير", "منطقة مكة المكرمة", "الرياض"])
-PROJECTS_DB["إجمالي الشركة (شامل الإدارة والمرحل)"] = aggregate_projects(["منطقة تبوك", "منطقة الباحة", "منطقة عسير", "منطقة مكة المكرمة", "الرياض", "الادارة"])
+base_regions = ["منطقة تبوك", "منطقة الباحة", "منطقة عسير", "منطقة مكة المكرمة", "الرياض"]
+PROJECTS_DB["إجمالي المشاريع (5 مناطق)"] = aggregate_projects(base_regions)
+PROJECTS_DB["إجمالي الشركة (شامل الإيراد المؤجل 2025)"] = aggregate_projects(base_regions + ["الادارة"])
 
 # ==========================================
-# حسابات القوائم العامة للشركة (التبويبات 1 - 5)
+# حسابات القوائم المالية العامة للشركة (مع تفصيل: فرق + مقاولين + مؤجل 2025)
 # ==========================================
+team_exec_total_26 = PROJECTS_DB["إجمالي الشركة (شامل الإيراد المؤجل 2025)"]["team_2026"]
+sub_exec_total_26 = PROJECTS_DB["إجمالي الشركة (شامل الإيراد المؤجل 2025)"]["sub_2026"]
+actual_revenue_total_26 = team_exec_total_26 + sub_exec_total_26 + deferred_rev_2025
+
 billed_rev_26 = 194444897.0
-accrued_rev_26 = actual_revenue_input - billed_rev_26
+accrued_rev_26 = actual_revenue_total_26 - billed_rev_26
 
 cogs_24 = [136720115, 23769921, 17230919, 15724423, 3999797, 19372902, 21441044]
 cogs_25 = [141071881, 27514807, 17656665, 15947310, 5319803, 24932318, 18902453]
@@ -197,7 +232,7 @@ tot_cogs_24, tot_cogs_25, tot_cogs_26 = sum(cogs_24), sum(cogs_25), sum(cogs_26)
 rev_24, rev_25 = 288799803.0, 298813832.0
 
 gp_24, gp_25 = rev_24 - tot_cogs_24, rev_25 - tot_cogs_25
-gp_26_b, gp_26_a = billed_rev_26 - tot_cogs_26, actual_revenue_input - tot_cogs_26
+gp_26_b, gp_26_a = billed_rev_26 - tot_cogs_26, actual_revenue_total_26 - tot_cogs_26
 
 ga_24, ga_25, ga_26 = 10514103.0, 10100078.0, 5270057.0
 ebit_24, ebit_25 = gp_24 - ga_24, gp_25 - ga_25
@@ -222,38 +257,43 @@ net_24, net_25 = ebt_24 + zakat_tax_24, ebt_25 + zakat_tax_25
 net_26_b, net_26_a = ebt_26_b, ebt_26_a
 
 # ==========================================
-# تقسيم شاشات المنصة (6 تبويبات شاملة موقف المشاريع)
+# تقسيم شاشات المنصة (7 تبويبات متكاملة)
 # ==========================================
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📈 الملخص التنفيذي",
     "📑 قائمة الدخل التفصيلية",
     "⚖️ قائمة المركز المالي",
     "💵 قائمة التدفقات النقدية",
     "📉 النسب والمؤشرات (KPIs)",
-    "🏗️ موقف المشاريع (2021-2026)"
+    "🏗️ موقف المشاريع (2021-2026)",
+    "📋 الإسناد والتنفيذ والفوترة بالمواقع"
 ])
 
 with tab1:
     st.subheader("🌟 ملخص الأداء المالي والمركز النقدي (حتى 30 سبتمبر 2026)")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("إيرادات التنفيذ الفعلي (9M 2026)", f"{actual_revenue_input:,.0f} ريال", f"إيراد مستحق: +{accrued_rev_26:,.0f}")
-    c2.metric("مجمل الربح التشغيلي", f"{gp_26_a:,.0f} ريال", f"هامش مجمل الربح: {(gp_26_a/actual_revenue_input)*100:.1f}%")
-    c3.metric("الربح النقدي (EBITDA)", f"{ebitda_26_a:,.0f} ريال", f"هامش EBITDA: {(ebitda_26_a/actual_revenue_input)*100:.1f}%")
-    c4.metric("صافي ربح الفترة", f"{net_26_a:,.0f} ريال", f"هامش صافي الربح: {(net_26_a/actual_revenue_input)*100:.1f}%")
+    c1.metric("إجمالي الإيراد حسب التنفيذ (شامل المؤجل)", f"{actual_revenue_total_26:,.0f} ريال", f"فجوة الفوترة: +{accrued_rev_26:,.0f}")
+    c2.metric("مجمل الربح التشغيلي", f"{gp_26_a:,.0f} ريال", f"هامش مجمل الربح: {(gp_26_a/actual_revenue_total_26)*100:.1f}%")
+    c3.metric("الربح النقدي (EBITDA)", f"{ebitda_26_a:,.0f} ريال", f"هامش EBITDA: {(ebitda_26_a/actual_revenue_total_26)*100:.1f}%")
+    c4.metric("صافي ربح الفترة", f"{net_26_a:,.0f} ريال", f"هامش صافي الربح: {(net_26_a/actual_revenue_total_26)*100:.1f}%")
 
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric("إجمالي الأصول", f"{262207451 + accrued_rev_26:,.0f} ريال", "نسبة التداول: 2.26x")
-    c6.metric("إجمالي حقوق الملكية", f"{189212339 + net_26_a:,.0f} ريال", "ملاءة مالية: 74.7%")
-    c7.metric("صافي التدفق النقدي التشغيلي", "19,533,421 ريال", "تحصيلات العملاء: 213.79 مليون")
-    c8.metric("النقد وما في حكمه بنهاية الفترة", "30,649,316 ريال", "التغير النقدي: (510,205) ريال")
+    c5.metric("تنفيذ فرق الشركة (2026)", f"{team_exec_total_26:,.0f} ريال", "79.4% من الإيراد")
+    c6.metric("تنفيذ مقاولي الباطن (2026)", f"{sub_exec_total_26:,.0f} ريال", "14.0% من الإيراد")
+    c7.metric("إيراد مؤجل مرحل من 2025", f"{deferred_rev_2025:,.0f} ريال", "6.6% من الإيراد")
+    c8.metric("النقد وما في حكمه بنهاية الفترة", "30,649,316 ريال", "التدفق التشغيلي: +19.53 مليون")
 
 with tab2:
-    st.subheader("📑 قائمة الربح أو الخسارة (بالتبويب الإداري المعتمد ونواتج الربحية)")
-    pl_columns = ["البيان (بالريال السعودي)", "2024 (مدقق)", "2025 (مدقق)", "30 سبتمبر 2026 (مفوتر)", "30 سبتمبر 2026 (بالتنفيذ الفعلي)"]
+    st.subheader("📑 قائمة الربح أو الخسارة (شاملة تفصيل التنفيذ الفعلي والإيراد المؤجل من 2025)")
+    pl_columns = ["البيان (بالريال السعودي)", "2024 (مدقق)", "2025 (مدقق)", "30 سبتمبر 2026 (مفوتر)", "30 سبتمبر 2026 (حسب التنفيذ الفعلي)"]
     pl_rows = [
-        ("section", "أولاً: الإيرادات التشغيلية", []),
-        ("item", "إيرادات المشاريع والتنفيذ (العقد الموحد والمشاريع)", [rev_24, rev_25, billed_rev_26, actual_revenue_input]),
-        ("subtotal", "إجمالي الإيرادات التشغيلية", [rev_24, rev_25, billed_rev_26, actual_revenue_input]),
+        ("section", "أولاً: الإيرادات التشغيلية (مفصلة حسب المصدر في 2026)", []),
+        ("item", "إيرادات المشاريع المفوترة (العقد الموحد والمشاريع)", [rev_24, rev_25, billed_rev_26, 0]),
+        ("item", "↳ إيرادات التنفيذ الفعلي - إنتاجية فرق الشركة (2026)", [0, 0, 0, team_exec_total_26]),
+        ("item", "↳ إيرادات التنفيذ الفعلي - أعمال مقاولي الباطن (2026)", [0, 0, 0, sub_exec_total_26]),
+        ("item", "↳ إيرادات مؤجلة مرحلة من عام 2025 (دفعات العقد الموحد)", [0, 0, 0, deferred_rev_2025]),
+        ("subtotal", "إجمالي الإيرادات التشغيلية المعتمدة", [rev_24, rev_25, billed_rev_26, actual_revenue_total_26]),
+        
         ("section", "ثانياً: تكلفة المشاريع (حسب البنود الرئيسية)", []),
         ("item", "1. الرواتب والأجور وملحقاتها", [-cogs_24[0], -cogs_25[0], -cogs_26[0], -cogs_26[0]]),
         ("item", "2. مصاريف صيانة وتشغيل السيارات والمعدات", [-cogs_24[1], -cogs_25[1], -cogs_26[1], -cogs_26[1]]),
@@ -263,14 +303,17 @@ with tab2:
         ("item", "6. مصاريف استهلاك السيارات والمعدات", [-cogs_24[5], -cogs_25[5], -cogs_26[5], -cogs_26[5]]),
         ("item", "7. مصاريف مشاريع أخرى (تعديل مقايسات، رخص حفريات، مواقع)", [-cogs_24[6], -cogs_25[6], -cogs_26[6], -cogs_26[6]]),
         ("subtotal", "إجمالي تكلفة المشاريع", [-tot_cogs_24, -tot_cogs_25, -tot_cogs_26, -tot_cogs_26]),
+        
         ("subtotal", "مجمل الربح (أو العجز) التشغيلي للمشاريع (Gross Profit)", [gp_24, gp_25, gp_26_b, gp_26_a]),
-        ("pct", "نسبة هامش مجمل الربح (%)", [(gp_24/rev_24)*100, (gp_25/rev_25)*100, (gp_26_b/billed_rev_26)*100, (gp_26_a/actual_revenue_input)*100]),
+        ("pct", "نسبة هامش مجمل الربح (%)", [(gp_24/rev_24)*100, (gp_25/rev_25)*100, (gp_26_b/billed_rev_26)*100, (gp_26_a/actual_revenue_total_26)*100]),
+        
         ("section", "ثالثاً: المصروفات الإدارية وربح التشغيل", []),
         ("item", "المصروفات العمومية والإدارية (شاملة إهلاك الإدارة)", [-ga_24, -ga_25, -ga_26, -ga_26]),
         ("subtotal", "ربح (خسارة) التشغيل (Operating Profit - EBIT)", [ebit_24, ebit_25, ebit_26_b, ebit_26_a]),
-        ("pct", "نسبة هامش ربح التشغيل (EBIT Margin %)", [(ebit_24/rev_24)*100, (ebit_25/rev_25)*100, (ebit_26_b/billed_rev_26)*100, (ebit_26_a/actual_revenue_input)*100]),
+        ("pct", "نسبة هامش ربح التشغيل (EBIT Margin %)", [(ebit_24/rev_24)*100, (ebit_25/rev_25)*100, (ebit_26_b/billed_rev_26)*100, (ebit_26_a/actual_revenue_total_26)*100]),
         ("subtotal", "الربح التشغيلي النقدي قبل الفوائد والإهلاك والزكاة (EBITDA)", [ebitda_24, ebitda_25, ebitda_26_b, ebitda_26_a]),
-        ("pct", "نسبة هامش الربح النقدي (EBITDA Margin %)", [(ebitda_24/rev_24)*100, (ebitda_25/rev_25)*100, (ebitda_26_b/billed_rev_26)*100, (ebitda_26_a/actual_revenue_input)*100]),
+        ("pct", "نسبة هامش الربح النقدي (EBITDA Margin %)", [(ebitda_24/rev_24)*100, (ebitda_25/rev_25)*100, (ebitda_26_b/billed_rev_26)*100, (ebitda_26_a/actual_revenue_total_26)*100]),
+        
         ("section", "رابعاً: الإيرادات والمصروفات الأخرى والزكاة", []),
         ("item", "تكاليف تمويل وعمولات بنكية", [fin_24, fin_25, fin_26, fin_26]),
         ("item", "أرباح رأسمالية من بيع ممتلكات وآلات ومعدات", [gain_ppe_24, gain_ppe_25, gain_ppe_26, gain_ppe_26]),
@@ -279,7 +322,7 @@ with tab2:
         ("subtotal", "صافي الربح قبل الزكاة وضريبة الدخل (EBT)", [ebt_24, ebt_25, ebt_26_b, ebt_26_a]),
         ("item", "الزكاة الشرعية وضريبة الدخل", [zakat_tax_24, zakat_tax_25, zakat_tax_26, zakat_tax_26]),
         ("total", "صافي ربح (خسارة) الفترة (Net Profit)", [net_24, net_25, net_26_b, net_26_a]),
-        ("pct", "نسبة هامش صافي الربح (Net Profit Margin %)", [(net_24/rev_24)*100, (net_25/rev_25)*100, (net_26_b/billed_rev_26)*100, (net_26_a/actual_revenue_input)*100])
+        ("pct", "نسبة هامش صافي الربح (Net Profit Margin %)", [(net_24/rev_24)*100, (net_25/rev_25)*100, (net_26_b/billed_rev_26)*100, (net_26_a/actual_revenue_total_26)*100])
     ]
     st.table(build_styled_table(pl_rows, pl_columns))
 
@@ -297,18 +340,14 @@ with tab3:
         ("section", "الأصول غير المتداولة", []),
         ("item", "الممتلكات والآلات والمعدات ومشاريع تحت التنفيذ، صافي", [115314870, 109582482, 112931800, 112931800]),
         ("item", "دفعات لشراء ممتلكات وآلات ومعدات", [1759631, 2850850, 2850850, 2850850]),
-        ("item", "عقارات استثمارية، صافي", [12180000, 13947604, 13947604, 13947604]),
-        ("item", "أصول ضريبية مؤجلة", [309330, 309330, 309330, 309330]),
+        ("item", "عقارات استثمارية وأصول ضريبية مؤجلة", [12489330, 14256934, 14256934, 14256934]),
         ("item", "استثمارات متاحة للبيع (صناديق استثمارية)", [15000000, 20142380, 25142380, 25142380]),
         ("subtotal", "إجمالي الأصول غير المتداولة", [144563831, 146832646, 155181964, 155181964]),
         ("section", "الأصول المتداولة", []),
         ("item", "النقد وما في حكمه", [32470427, 31159527, 30649316, 30649316]),
         ("item", "مدينون تجاريون", [61297501, 87231291, 53056543, 53056543]),
         ("item", "إيرادات مستحقة (أعمال منفذة غير مفوترة - WIP)", [0, 0, 0, accrued_rev_26]),
-        ("item", "مصروفات مدفوعة مقدماً وأرصدة مدينة أخرى", [8060444, 7949033, 8757612, 8757612]),
-        ("item", "المخزون", [1204677, 1120040, 1285134, 1285134]),
-        ("item", "تأمين خطابات ضمان", [16313715, 11137440, 9550682, 9550682]),
-        ("item", "أطراف ذات علاقة", [1909275, 4695363, 3726200, 3726200]),
+        ("item", "مصروفات مدفوعة مقدماً ومخزون وتأمين ضمانات وأطراف ذات علاقة", [27488111, 24901876, 23319628, 23319628]),
         ("subtotal", "إجمالي الأصول المتداولة", [121256039, 143292694, tot_ca_26_b, tot_ca_26_a]),
         ("total", "إجمالي الأصول", [265819870, 290125340, tot_assets_26_b, tot_assets_26_a]),
         ("section", "حقوق الملكية والالتزامات", []),
@@ -329,7 +368,7 @@ with tab4:
         ("subtotal", "الربح التشغيلي النقدي قبل تغيرات رأس المال العامل", [66859773, 65166072, net_26_a + 15969350]),
         ("item", "المحصل من المدينين التجاريين", [1878400, -25933790, 34047121]),
         ("item", "الزيادة في الإيرادات المستحقة (WIP)", [0, 0, -accrued_rev_26]),
-        ("item", "صافي التغير في باقي بنود رأس المال العامل والمقدمات", [-6167135, -4750763, -14769401]),
+        ("item", "إطفاء الإيرادات المؤجلة وصافي تغيرات رأس المال العامل الأخرى", [-6167135, -4750763, -14769401]),
         ("item", "المسدد الفعلي لمكافأة نهاية الخدمة والزكاة", [-8257098, -6737430, -8471207]),
         ("subtotal", "صافي النقد الناتج من الأنشطة التشغيلية (A)", [54313940, 27744089, 19533421]),
         ("section", "ثانياً: الأنشطة الاستثمارية والتمويلية", []),
@@ -346,68 +385,85 @@ with tab5:
     kpi_columns = ["المؤشر المالي", "2023 (مدقق)", "2024 (مدقق)", "2025 (مدقق)", "30 سبتمبر 2026"]
     kpi_rows = [
         ("section", "1. مؤشرات الربحية والعائد", []),
-        ("pct", "هامش مجمل الربح (%)", [15.45, 17.50, 15.89, (gp_26_a/actual_revenue_input)*100]),
-        ("pct", "هامش الربح النقدي EBITDA (%)", [17.83, 21.12, 21.04, (ebitda_26_a/actual_revenue_input)*100]),
-        ("pct", "هامش صافي الربح (%)", [11.63, 15.24, 11.71, (net_26_a/actual_revenue_input)*100]),
+        ("pct", "هامش مجمل الربح (%)", [15.45, 17.50, 15.89, (gp_26_a/actual_revenue_total_26)*100]),
+        ("pct", "هامش الربح النقدي EBITDA (%)", [17.83, 21.12, 21.04, (ebitda_26_a/actual_revenue_total_26)*100]),
+        ("pct", "هامش صافي الربح (%)", [11.63, 15.24, 11.71, (net_26_a/actual_revenue_total_26)*100]),
         ("section", "2. السيولة والرفع المالي والتحصيل", []),
         ("subtotal", "صافي رأس المال العامل (ريال)", [66805303, 47934184, 67749766, tot_ca_26_a - 59000848]),
         ("pct", "إجمالي الالتزامات إلى حقوق الملكية (%)", [64.59, 60.15, 46.17, (72995112 / tot_eq_26_a)*100]),
-        ("total", "دورة التحول النقدي الشاملة (يوم)", [81, 74, 104, int(round(((53056543 + accrued_rev_26)/actual_revenue_input)*273.75)) - 1])
+        ("total", "دورة التحول النقدي الشاملة (يوم)", [81, 74, 104, int(round(((53056543 + accrued_rev_26)/actual_revenue_total_26)*273.75)) - 1])
     ]
     st.table(build_styled_table(kpi_rows, kpi_columns))
 
 # ==========================================
-# التبويب السادس: موقف المشاريع (2021 - 2026) حسب ترتيب النموذج
+# التبويب السادس: موقف المشاريع (شامل الإيراد المؤجل من 2025 وقالب التحديث)
 # ==========================================
 with tab6:
     st.subheader("🏗️ موقف المشاريع التاريخي والتحليلي (2021 – 30 سبتمبر 2026)")
     
-    col_opt1, col_opt2 = st.columns([1, 1])
+    col_opt1, col_opt2, col_opt3 = st.columns([1.2, 1.5, 0.8])
     with col_opt1:
         selected_proj = st.selectbox(
             "📍 اختر المشروع / المنطقة للاستعراض:",
-            ["إجمالي المشاريع (5 مناطق)", "منطقة تبوك", "منطقة الباحة", "منطقة عسير", "منطقة مكة المكرمة", "الرياض", "الادارة", "إجمالي الشركة (شامل الإدارة والمرحل)"]
+            ["إجمالي الشركة (شامل الإيراد المؤجل 2025)", "إجمالي المشاريع (5 مناطق)", "منطقة تبوك", "منطقة الباحة", "منطقة عسير", "منطقة مكة المكرمة", "الرياض", "الادارة"]
         )
     with col_opt2:
         rev_mode = st.radio(
             "⚙️ خيار عرض إيرادات عام 2026:",
-            ["حسب التنفيذ الفعلي (فرق الشركة + مقاولي الباطن)", "حسب المفوتر (المثبت بالشامل)"],
+            ["حسب التنفيذ الفعلي (فرق + مقاولين + مؤجل 2025)", "حسب المفوتر (المثبت بالشامل)"],
             horizontal=True
+        )
+    with col_opt3:
+        # إنشاء قالب إكسيل جاهز للتحميل لتحديث قوائم دخل المشاريع
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            for reg_name in base_regions + ["الادارة"]:
+                reg_d = PROJECTS_DB[reg_name]
+                rows_t = []
+                for k_item, lbl in [
+                    ("rev_shamel", "الإيراد المثبت بالشامل"), ("other_rev", "إيرادات أخرى"),
+                    ("salaries", "الرواتب والأجور وملحقاتها"), ("direct_cost", "تكلفة المشتريات ومقاولي الباطن"),
+                    ("maint_veh", "صيانة السيارات والمعدات"), ("rent_trans", "الإيجارات والنقليات"),
+                    ("tools_cons", "العدد والأدوات والمستهلكات"), ("ga_exp", "مصاريف إدارية وعمومية"),
+                    ("fin_exp", "مصاريف التمويل البنكية"), ("dep_exp", "مصاريف الإهلاك")
+                ]:
+                    vals = reg_d[k_item]
+                    rows_t.append({"Key": k_item, "البند": lbl, "2021": vals[0], "2022": vals[1], "2023": vals[2], "2024": vals[3], "2025": vals[4], "2026": vals[5]})
+                rows_t.append({"Key": "team_2026", "البند": "تنفيذ فرق الشركة 2026", "2021": 0, "2022": 0, "2023": 0, "2024": 0, "2025": 0, "2026": reg_d["team_2026"]})
+                rows_t.append({"Key": "sub_2026", "البند": "تنفيذ مقاولي الباطن 2026", "2021": 0, "2022": 0, "2023": 0, "2024": 0, "2025": 0, "2026": reg_d["sub_2026"]})
+                rows_t.append({"Key": "def_2026", "البند": "إيراد مؤجل من 2025", "2021": 0, "2022": 0, "2023": 0, "2024": 0, "2025": 0, "2026": reg_d["def_2026"]})
+                pd.DataFrame(rows_t).to_excel(writer, sheet_name=reg_name, index=False)
+        st.download_button(
+            label="📥 تحميل قالب تحديث المشاريع (Excel)",
+            data=buf.getvalue(),
+            file_name="Projects_PL_Template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
     p_data = PROJECTS_DB[selected_proj]
-    use_actual_26 = (rev_mode == "حسب التنفيذ الفعلي (فرق الشركة + مقاولي الباطن)")
+    use_actual_26 = (rev_mode == "حسب التنفيذ الفعلي (فرق + مقاولين + مؤجل 2025)")
 
-    # بناء سلسلة الإيراد الأساسي (2021 - 2026)
     main_rev = list(p_data["rev_shamel"][:5])
     if use_actual_26:
-        main_rev.append(p_data["team_2026"] + p_data["sub_2026"])
+        main_rev.append(p_data["team_2026"] + p_data["sub_2026"] + p_data["def_2026"])
     else:
         main_rev.append(p_data["rev_shamel"][5])
 
     other_r = p_data["other_rev"]
     tot_rev_series = [main_rev[i] + other_r[i] for i in range(6)]
 
-    # البنود الثمانية للمصروفات حسب ترتيب ملف (نموذج.xlsx)
-    sal_s = p_data["salaries"]
-    dir_s = p_data["direct_cost"]
-    mnt_s = p_data["maint_veh"]
-    rnt_s = p_data["rent_trans"]
-    tls_s = p_data["tools_cons"]
-    ga_s  = p_data["ga_exp"]
-    fin_s = p_data["fin_exp"]
-    dep_s = p_data["dep_exp"]
+    sal_s, dir_s, mnt_s = p_data["salaries"], p_data["direct_cost"], p_data["maint_veh"]
+    rnt_s, tls_s, ga_s  = p_data["rent_trans"], p_data["tools_cons"], p_data["ga_exp"]
+    fin_s, dep_s        = p_data["fin_exp"], p_data["dep_exp"]
 
     tot_exp_series = [sal_s[i] + dir_s[i] + mnt_s[i] + rnt_s[i] + tls_s[i] + ga_s[i] + fin_s[i] + dep_s[i] for i in range(6)]
     net_inc_series = [tot_rev_series[i] - tot_exp_series[i] for i in range(6)]
     margin_series = [(net_inc_series[i] / tot_rev_series[i] * 100) if tot_rev_series[i] != 0 else 0.0 for i in range(6)]
 
-    # إضافة عمود الإجمالي التراكمي (2021 - 2026)
     def with_total(lst):
         return lst + [sum(lst)]
 
     proj_cols = ["البيان (وفق ترتيب النموذج المعتمد)", "2021", "2022", "2023", "2024", "2025", "2026 (حتى 30/9)", "إجمالي الفترة"]
-    
     proj_rows = [
         ("section", f"أولاً: الإيرادات - {selected_proj}", []),
         ("item", "الإيراد المثبت بالشامل (المفوتر)", with_total(p_data["rev_shamel"])),
@@ -416,15 +472,15 @@ with tab6:
         proj_rows.extend([
             ("item", "↳ تنفيذ 2026: إنتاجية فرق الشركة", [0, 0, 0, 0, 0, p_data["team_2026"], p_data["team_2026"]]),
             ("item", "↳ تنفيذ 2026: أعمال مقاولي الباطن", [0, 0, 0, 0, 0, p_data["sub_2026"], p_data["sub_2026"]]),
-            ("subtotal", "الإيراد المعتمد في الحساب (الفعلي لعام 2026)", with_total(main_rev)),
+            ("item", "↳ إيراد مؤجل من عام 2025", [0, 0, 0, 0, 0, p_data["def_2026"], p_data["def_2026"]]),
+            ("subtotal", "الإيراد المعتمد في الحساب (شامل التنفيذ الفعلي والمؤجل)", with_total(main_rev)),
         ])
     proj_rows.extend([
         ("item", "إيرادات أخرى", with_total(other_r)),
         ("subtotal", "إجمالي الإيرادات", with_total(tot_rev_series)),
-        
         ("section", "ثانياً: المصروفات والتكاليف (مرتبة حسب النموذج)", []),
         ("item", "1. إجمالي الرواتب والأجور وملحقاتها", with_total(sal_s)),
-        ("item", "2. تكلفة المشتريات ومقاولي الباطن والغرامات (تكلفة إيرادات المشاريع)", with_total(dir_s)),
+        ("item", "2. تكلفة المشتريات ومقاولي الباطن والغرامات", with_total(dir_s)),
         ("item", "3. صيانة السيارات والمعدات", with_total(mnt_s)),
         ("item", "4. إجمالي الإيجارات والنقليات", with_total(rnt_s)),
         ("item", "5. العدد والأدوات والمواد المستهلكة", with_total(tls_s)),
@@ -432,33 +488,124 @@ with tab6:
         ("item", "7. مصاريف التمويل البنكية", with_total(fin_s)),
         ("item", "8. إجمالي مصاريف الإهلاك", with_total(dep_s)),
         ("subtotal", "إجمالي المصروفات", with_total(tot_exp_series)),
-        
         ("section", "ثالثاً: صافي النتيجة والربحية", []),
         ("total", "صافي الدخل", with_total(net_inc_series)),
         ("pct", "نسبة صافي الدخل إلى إجمالي الإيرادات (%)", margin_series + [(sum(net_inc_series)/sum(tot_rev_series)*100) if sum(tot_rev_series) != 0 else 0.0])
     ])
-
     st.table(build_styled_table(proj_rows, proj_cols))
 
-    # عرض جدول مقارنة جميع المشاريع في عام 2026 (المفوتر مقابل الفعلي)
-    st.markdown("---")
-    st.subheader("📊 مقارنة شاملة للمشاريع الخمسة في عام 2026 (المفوتر مقابل التنفيذ الفعلي)")
-    comp_26_rows = []
-    for p_name in ["منطقة تبوك", "منطقة الباحة", "منطقة عسير", "منطقة مكة المكرمة", "الرياض", "إجمالي المشاريع (5 مناطق)"]:
-        pd_i = PROJECTS_DB[p_name]
-        b_rev = pd_i["rev_shamel"][5]
-        t_rev = pd_i["team_2026"]
-        s_rev = pd_i["sub_2026"]
-        a_rev = t_rev + s_rev
-        o_rev = pd_i["other_rev"][5]
-        t_exp = pd_i["salaries"][5] + pd_i["direct_cost"][5] + pd_i["maint_veh"][5] + pd_i["rent_trans"][5] + pd_i["tools_cons"][5] + pd_i["ga_exp"][5] + pd_i["fin_exp"][5] + pd_i["dep_exp"][5]
-        net_b = (b_rev + o_rev) - t_exp
-        net_a = (a_rev + o_rev) - t_exp
-        r_type = "total" if p_name.startswith("إجمالي") else "item"
-        comp_26_rows.append((r_type, p_name, [b_rev, t_rev, s_rev, a_rev, a_rev - b_rev, t_exp, net_b, net_a]))
+# ==========================================
+# التبويب السابع: حجم الإسناد والتنفيذ والفوترة بالمواقع والعقود
+# ==========================================
+with tab7:
+    st.subheader("📋 متابعة حجم الإسناد الشهري، التنفيذ (فرق ومقاولين)، الفوترة، والمنفذ غير المفوتر")
+    
+    # بيانات أساسية للمواقع والعقود قابلة للتحديث الفوري عند رفع ملفات الإسناد في الشريط الجانبي
+    default_assign_data = [
+        {"الموقع": "منطقة تبوك", "رقم العقد": "عقد موحد - تبوك", "الشهر": "إجمالي حتى سبتمبر 2026", "الإسناد الشهري": 45000000.0, "تنفيذ فرق الشركة": 39170853.0, "تنفيذ مقاولي الباطن": 0.0, "المفوتر بالشامل": 32927966.0},
+        {"الموقع": "منطقة الباحة", "رقم العقد": "عقد موحد - الباحة", "الشهر": "إجمالي حتى سبتمبر 2026", "الإسناد الشهري": 68000000.0, "تنفيذ فرق الشركة": 48216447.0, "تنفيذ مقاولي الباطن": 11108513.0, "المفوتر بالشامل": 64319949.0},
+        {"الموقع": "منطقة عسير", "رقم العقد": "عقد موحد - عسير", "الشهر": "إجمالي حتى سبتمبر 2026", "الإسناد الشهري": 42000000.0, "تنفيذ فرق الشركة": 34935777.0, "تنفيذ مقاولي الباطن": 1131278.0, "المفوتر بالشامل": 19930136.0},
+        {"الموقع": "منطقة مكة المكرمة", "رقم العقد": "عقد موحد - مكة", "الشهر": "إجمالي حتى سبتمبر 2026", "الإسناد الشهري": 62000000.0, "تنفيذ فرق الشركة": 41676603.0, "تنفيذ مقاولي الباطن": 12698389.0, "المفوتر بالشامل": 50675387.0},
+        {"الموقع": "الرياض", "رقم العقد": "عقد موحد - الرياض", "الشهر": "إجمالي حتى سبتمبر 2026", "الإسناد الشهري": 24000000.0, "تنفيذ فرق الشركة": 12000000.0, "تنفيذ مقاولي الباطن": 6000000.0, "المفوتر بالشامل": 11893717.0},
+    ]
+    df_assign = pd.DataFrame(default_assign_data)
 
-    comp_26_cols = ["المشروع", "المفوتر بالشامل", "إنتاجية الفرق", "مقاولو الباطن", "إجمالي التنفيذ الفعلي", "فجوة الفوترة", "إجمالي المصروفات", "صافي الدخل (مفوتر)", "صافي الدخل (فعلي)"]
-    st.table(build_styled_table(comp_26_rows, comp_26_cols))
+    # إذا قام المستخدم برفع ملفات الإسناد من الشريط الجانبي
+    if uploaded_assign:
+        loaded_dfs = []
+        for f_ass in uploaded_assign:
+            try:
+                if f_ass.name.endswith(".csv"):
+                    loaded_dfs.append(pd.read_csv(f_ass))
+                else:
+                    loaded_dfs.append(pd.read_excel(f_ass))
+            except Exception as e:
+                st.warning(f"تعذر قراءة الملف {f_ass.name}: {e}")
+        if loaded_dfs:
+            df_custom = pd.concat(loaded_dfs, ignore_index=True)
+            req_cols = {"الموقع", "رقم العقد", "الشهر", "الإسناد الشهري", "تنفيذ فرق الشركة", "تنفيذ مقاولي الباطن", "المفوتر بالشامل"}
+            if req_cols.issubset(set(df_custom.columns)):
+                df_assign = df_custom
+                st.success("✅ تم تحديث بيانات الإسناد والتنفيذ والفوترة من الملفات المرفقة بنجاح!")
+            else:
+                st.info("💡 الملف المرفوع معروض أدناه؛ ولاعتماد التجميع التلقائي يرجى استخدام القالب القياسي للإسناد.")
+                st.dataframe(df_custom, use_container_width=True)
+
+    # حساب إجمالي التنفيذ والمنفذ غير المفوتر ونسب الإنجاز
+    df_assign["إجمالي التنفيذ الشهري"] = df_assign["تنفيذ فرق الشركة"] + df_assign["تنفيذ مقاولي الباطن"]
+    df_assign["المنفذ غير المفوتر (WIP)"] = df_assign["إجمالي التنفيذ الشهري"] - df_assign["المفوتر بالشامل"]
+    df_assign["المتبقي من الإسناد تحت التنفيذ"] = df_assign["الإسناد الشهري"] - df_assign["إجمالي التنفيذ الشهري"]
+
+    col_v1, col_v2, col_v3 = st.columns([1.2, 1.2, 1])
+    with col_v1:
+        view_level = st.radio("🔍 مستوى الاستعراض والتجميع:", ["حسب الموقع", "حسب رقم العقد", "إجمالي الشركة (شهري/تراكمي)"], horizontal=True)
+    with col_v2:
+        site_filter = st.multiselect("📍 تصفية حسب الموقع:", options=df_assign["الموقع"].unique().tolist(), default=df_assign["الموقع"].unique().tolist())
+    with col_v3:
+        buf_ass = io.BytesIO()
+        with pd.ExcelWriter(buf_ass, engine="openpyxl") as writer:
+            pd.DataFrame(default_assign_data).to_excel(writer, sheet_name="بيانات_الإسناد", index=False)
+        st.download_button(
+            label="📥 تحميل قالب الإسناد والتنفيذ (Excel)",
+            data=buf_ass.getvalue(),
+            file_name="Assignment_Execution_Template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    df_filtered = df_assign[df_assign["الموقع"].isin(site_filter)].copy()
+
+    if view_level == "حسب الموقع":
+        grp_col = "الموقع"
+    elif view_level == "حسب رقم العقد":
+        grp_col = "رقم العقد"
+    else:
+        grp_col = "الشهر"
+
+    df_grouped = df_filtered.groupby(grp_col, as_index=False)[
+        ["الإسناد الشهري", "تنفيذ فرق الشركة", "تنفيذ مقاولي الباطن", "إجمالي التنفيذ الشهري", "المفوتر بالشامل", "المنفذ غير المفوتر (WIP)", "المتبقي من الإسناد تحت التنفيذ"]
+    ].sum()
+
+    # بطاقات ملخص الإسناد والتنفيذ والفوترة
+    tot_ass = df_grouped["الإسناد الشهري"].sum()
+    tot_team = df_grouped["تنفيذ فرق الشركة"].sum()
+    tot_sub = df_grouped["تنفيذ مقاولي الباطن"].sum()
+    tot_exec = df_grouped["إجمالي التنفيذ الشهري"].sum()
+    tot_bill = df_grouped["المفوتر بالشامل"].sum()
+    tot_unbilled = df_grouped["المنفذ غير المفوتر (WIP)"].sum()
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("إجمالي الإسناد", f"{tot_ass:,.0f} ريال", f"نسبة التنفيذ: {(tot_exec/tot_ass*100) if tot_ass else 0:.1f}%")
+    k2.metric("إجمالي التنفيذ (فرق + مقاولين)", f"{tot_exec:,.0f} ريال", f"فرق: {tot_team:,.0f} | مقاولين: {tot_sub:,.0f}")
+    k3.metric("إجمالي المفوتر بالشامل", f"{tot_bill:,.0f} ريال", f"نسبة الفوترة للتنفيذ: {(tot_bill/tot_exec*100) if tot_exec else 0:.1f}%")
+    k4.metric("المنفذ غير المفوتر (WIP)", f"{tot_unbilled:,.0f} ريال", "مستحقات قيد الفوترة")
+    k5.metric("متبقي الإسناد غير المنفذ", f"{tot_ass - tot_exec:,.0f} ريال", "أعمال قيد التنفيذ بالمواقع")
+
+    # بناء جدول العرض المحاسبي الملون للإسناد والتنفيذ
+    ass_cols = [grp_col, "الإسناد الشهري", "تنفيذ فرق الشركة", "تنفيذ مقاولي الباطن", "إجمالي التنفيذ", "المفوتر بالشامل", "المنفذ غير المفوتر (WIP)", "متبقي الإسناد"]
+    ass_rows = [("section", f"بيان الإسناد والتنفيذ والفوترة ({view_level})", [])]
+    for _, r in df_grouped.iterrows():
+        ass_rows.append((
+            "item",
+            str(r[grp_col]),
+            [r["الإسناد الشهري"], r["تنفيذ فرق الشركة"], r["تنفيذ مقاولي الباطن"], r["إجمالي التنفيذ الشهري"], r["المفوتر بالشامل"], r["المنفذ غير المفوتر (WIP)"], r["المتبقي من الإسناد تحت التنفيذ"]]
+        ))
+    ass_rows.append((
+        "total",
+        "الإجمالي العام",
+        [tot_ass, tot_team, tot_sub, tot_exec, tot_bill, tot_unbilled, tot_ass - tot_exec]
+    ))
+    st.table(build_styled_table(ass_rows, ass_cols))
+
+    # رسم بياني مقارن للإسناد والتنفيذ والفوترة
+    fig_ass = px.bar(
+        df_grouped,
+        x=grp_col,
+        y=["الإسناد الشهري", "إجمالي التنفيذ الشهري", "المفوتر بالشامل", "المنفذ غير المفوتر (WIP)"],
+        barmode="group",
+        title=f"مقارنة الإسناد والتنفيذ والفوترة والمنفذ غير المفوتر ({view_level})",
+        text_auto=',.0f'
+    )
+    st.plotly_chart(fig_ass, use_container_width=True)
 
 st.markdown("---")
 st.markdown("🔒 **منصة دلتا السعودية للتقارير المالية** - إشراف الإدارة المالية | جميع الحقوق محفوظة © 2026")
