@@ -11,14 +11,59 @@ st.set_page_config(
     layout="wide"
 )
 
-# تنسيق CSS لدعم اللغة العربية وتنسيق الجداول المالية
+# تنسيق CSS شامل لفرض الاتجاه من اليمين إلى اليسار (RTL) لجميع الجداول والتقارير
 st.markdown("""
 <style>
-    .main { direction: rtl; text-align: right; }
-    div[data-testid="stMetricValue"] { font-size: 1.32rem; font-weight: bold; color: #1E3A8A; }
-    div[data-testid="stMetricLabel"] { font-size: 0.90rem; font-weight: 600; }
-    th { text-align: right !important; background-color: #1E3A8A !important; color: white !important; }
-    td { text-align: right !important; font-family: 'Segoe UI', Tahoma, sans-serif; }
+    .stApp, .main, [data-testid="stSidebar"], [data-testid="stAppViewContainer"] {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    div[data-baseweb="tab-list"] {
+        direction: rtl !important;
+        justify-content: flex-start !important;
+    }
+    div[data-testid="stHorizontalBlock"] {
+        direction: rtl !important;
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 1.32rem;
+        font-weight: bold;
+        color: #1E3A8A;
+        text-align: right !important;
+        direction: rtl !important;
+    }
+    div[data-testid="stMetricLabel"], div[data-testid="stMetricDelta"] {
+        font-size: 0.90rem;
+        font-weight: 600;
+        text-align: right !important;
+        direction: rtl !important;
+    }
+    [data-testid="stTable"], table {
+        direction: rtl !important;
+        width: 100% !important;
+        border-collapse: collapse !important;
+    }
+    thead, tbody, tr {
+        direction: rtl !important;
+    }
+    th {
+        text-align: right !important;
+        direction: rtl !important;
+        background-color: #1E3A8A !important;
+        color: white !important;
+        padding: 10px 12px !important;
+        font-family: 'Segoe UI', Tahoma, sans-serif !important;
+    }
+    td {
+        text-align: right !important;
+        direction: rtl !important;
+        padding: 8px 12px !important;
+        font-family: 'Segoe UI', Tahoma, sans-serif !important;
+    }
+    .stSelectbox, .stRadio, .stMultiSelect, .stNumberInput, .stFileUploader, .stMarkdown {
+        direction: rtl !important;
+        text-align: right !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -56,7 +101,7 @@ deferred_rev_2025 = st.sidebar.number_input(
 )
 
 # ==========================================
-# دالة تنسيق الجداول المحاسبية الملونة
+# دالة تنسيق الجداول المحاسبية الملونة (من اليمين لليسار بدون عمود ترقيم)
 # ==========================================
 def fmt_val(val, is_pct=False):
     if val is None or val == "":
@@ -83,18 +128,24 @@ def build_styled_table(rows_spec, columns):
     
     def apply_row_styles(row):
         rt = row_types[row.name]
+        base_rtl = 'direction: rtl; text-align: right; '
         if rt == 'section':
-            return ['background-color: #1E3A8A; color: #FFFFFF; font-weight: bold;'] * len(row)
+            return [base_rtl + 'background-color: #1E3A8A; color: #FFFFFF; font-weight: bold;'] * len(row)
         elif rt == 'subtotal':
-            return ['background-color: #DBEAFE; color: #1E3A8A; font-weight: bold; border-top: 1px solid #93C5FD; border-bottom: 1px solid #93C5FD;'] * len(row)
+            return [base_rtl + 'background-color: #DBEAFE; color: #1E3A8A; font-weight: bold; border-top: 1px solid #93C5FD; border-bottom: 1px solid #93C5FD;'] * len(row)
         elif rt == 'pct':
-            return ['background-color: #F3F4F6; color: #374151; font-weight: 600; font-style: italic;'] * len(row)
+            return [base_rtl + 'background-color: #F3F4F6; color: #374151; font-weight: 600; font-style: italic;'] * len(row)
         elif rt == 'total':
-            return ['background-color: #DCFCE7; color: #14532D; font-weight: bold; border-top: 2px solid #166534; border-bottom: 2px double #166534;'] * len(row)
+            return [base_rtl + 'background-color: #DCFCE7; color: #14532D; font-weight: bold; border-top: 2px solid #166534; border-bottom: 2px double #166534;'] * len(row)
         else:
-            return ['background-color: #FFFFFF; color: #111827;'] * len(row)
+            return [base_rtl + 'background-color: #FFFFFF; color: #111827;'] * len(row)
 
-    return df.style.apply(apply_row_styles, axis=1)
+    styler = df.style.apply(apply_row_styles, axis=1)
+    try:
+        styler = styler.hide(axis="index")
+    except Exception:
+        pass
+    return styler
 
 # ==========================================
 # قاعدة بيانات قوائم دخل المشاريع (2021 - 2026)
@@ -495,9 +546,7 @@ with tab7:
     * **حركة الأعمال المنفذة غير المفوترة (WIP التراكمي):** `رصيد افتتاحي منفذ غير مفوتر من 2025 (إسناد + طوارئ)` + `إجمالي التنفيذ الفعلي 2026 (فرق + مقاولين + طوارئ)` = **إجمالي المنفذ المتاح للفوترة** $\\leftarrow$ يُخصم منه `إجمالي المفوتر 2026` ليعطي **الرصيد الختامي للمنفذ غير المفوتر (WIP)**.
     """)
 
-    # قاعدة البيانات التراكمية شاملة الأرصدة الافتتاحية (غير المنفذة وغير المفوترة - إسناد وطوارئ)
     unified_contract_rows = [
-        # 1. العقد الموحد بمكة المكرمة
         {"العقد": "العقد الموحد بمكة المكرمة", "المنطقة تحت العقد": "مكة", "حالة البيانات": "✅ تقرير فعلي مرفق (سبتمبر 2026)",
          "افتتاحي غير منفذ - إسناد (2025)": 14603220.34, "افتتاحي غير منفذ - طوارئ (2025)": 0.0,
          "إسناد أوامر عمل 2026": 22540566.00, "إسناد طوارئ 2026": 0.0, "إيراد فرق الصيانة": 0.0,
@@ -512,8 +561,6 @@ with tab7:
          "تنفيذ فرق الشركة 2026": 0.0, "تنفيذ مقاولي الباطن 2026": 0.0, "تنفيذ طوارئ 2026": 0.0,
          "مفوتر أوامر عمل 2026": 0.0, "مفوتر طوارئ 2026": 0.0,
          "الغير منفذ (رصيد الإسناد المتبقي)": 0.0},
-
-        # 2. العقد الموحد عسير
         {"العقد": "العقد الموحد عسير", "المنطقة تحت العقد": "محايل", "حالة البيانات": "✅ تقرير فعلي مرفق (سبتمبر 2026)",
          "افتتاحي غير منفذ - إسناد (2025)": 948000.75, "افتتاحي غير منفذ - طوارئ (2025)": 0.0,
          "إسناد أوامر عمل 2026": 1652416.98, "إسناد طوارئ 2026": 6389118.48, "إيراد فرق الصيانة": 0.0,
@@ -542,8 +589,6 @@ with tab7:
          "تنفيذ فرق الشركة 2026": 0.0, "تنفيذ مقاولي الباطن 2026": 0.0, "تنفيذ طوارئ 2026": 0.0,
          "مفوتر أوامر عمل 2026": 0.0, "مفوتر طوارئ 2026": 0.0,
          "الغير منفذ (رصيد الإسناد المتبقي)": 0.0},
-
-        # 3. العقد الموحد بالرياض
         {"العقد": "العقد الموحد بالرياض", "المنطقة تحت العقد": "مكتب الشرق", "حالة البيانات": "✅ تقرير فعلي مرفق (إجمالي موحد الرياض)",
          "افتتاحي غير منفذ - إسناد (2025)": 3637885.19, "افتتاحي غير منفذ - طوارئ (2025)": 0.0,
          "إسناد أوامر عمل 2026": 18435195.78, "إسناد طوارئ 2026": 3233799.42, "إيراد فرق الصيانة": 0.0,
@@ -572,8 +617,6 @@ with tab7:
          "تنفيذ فرق الشركة 2026": 0.0, "تنفيذ مقاولي الباطن 2026": 0.0, "تنفيذ طوارئ 2026": 0.0,
          "مفوتر أوامر عمل 2026": 0.0, "مفوتر طوارئ 2026": 0.0,
          "الغير منفذ (رصيد الإسناد المتبقي)": 0.0},
-
-        # 4. العقد الموحد بتبوك
         {"العقد": "العقد الموحد بتبوك", "المنطقة تحت العقد": "تبوك", "حالة البيانات": "✅ تقرير فعلي مرفق (Report 05-05 تبوك)",
          "افتتاحي غير منفذ - إسناد (2025)": 462712.52, "افتتاحي غير منفذ - طوارئ (2025)": 0.0,
          "إسناد أوامر عمل 2026": 2792602.64, "إسناد طوارئ 2026": 2518097.41, "إيراد فرق الصيانة": 0.0,
@@ -609,8 +652,6 @@ with tab7:
          "تنفيذ فرق الشركة 2026": 0.0, "تنفيذ مقاولي الباطن 2026": 0.0, "تنفيذ طوارئ 2026": 0.0,
          "مفوتر أوامر عمل 2026": 0.0, "مفوتر طوارئ 2026": 0.0,
          "الغير منفذ (رصيد الإسناد المتبقي)": 0.0},
-
-        # 5. العقد الموحد بالباحة
         {"العقد": "العقد الموحد بالباحة", "المنطقة تحت العقد": "الباحة", "حالة البيانات": "⏳ بانتظار إرفاق ملف الموقع",
          "افتتاحي غير منفذ - إسناد (2025)": 0.0, "افتتاحي غير منفذ - طوارئ (2025)": 0.0,
          "إسناد أوامر عمل 2026": 0.0, "إسناد طوارئ 2026": 0.0, "إيراد فرق الصيانة": 0.0,
@@ -636,7 +677,6 @@ with tab7:
 
     df_assign = pd.DataFrame(unified_contract_rows)
 
-    # قراءة وتحديث البيانات في حال رفع المستخدم لملف إكسيل من الشريط الجانبي
     if uploaded_assign:
         loaded_dfs = []
         for f_ass in uploaded_assign:
@@ -654,12 +694,9 @@ with tab7:
                 df_assign = df_custom.fillna(0.0)
                 st.success("✅ تم تحديث بيانات الأرصدة الافتتاحية والإسناد والتنفيذ والفوترة من الملف المرفق بنجاح!")
             else:
-                st.info("💡 عُرض محتوى الملف المرفق أدناه (لتحديث الجدول الرئيسي استخدم قالب الـ 18 منطقة المحدث المحتوي على الأرصدة الافتتاحية):")
+                st.info("💡 عُرض محتوى الملف المرفق أدناه:")
                 st.dataframe(df_custom, use_container_width=True)
 
-    # ==========================================
-    # المعادلات التراكمية للأرصدة الافتتاحية والحركة السنوية
-    # ==========================================
     df_assign["إجمالي افتتاحي غير منفذ (2025)"] = df_assign["افتتاحي غير منفذ - إسناد (2025)"] + df_assign["افتتاحي غير منفذ - طوارئ (2025)"]
     df_assign["إجمالي الإسناد الجديد (2026)"] = df_assign["إسناد أوامر عمل 2026"] + df_assign["إسناد طوارئ 2026"]
     df_assign["إجمالي الإسناد المتاح للتنفيذ"] = df_assign["إجمالي افتتاحي غير منفذ (2025)"] + df_assign["إجمالي الإسناد الجديد (2026)"]
@@ -671,7 +708,6 @@ with tab7:
     df_assign["إجمالي المفوتر (2026)"] = df_assign["مفوتر أوامر عمل 2026"] + df_assign["مفوتر طوارئ 2026"]
     df_assign["الرصيد الختامي للمنفذ غير المفوتر (WIP التراكمي)"] = df_assign["إجمالي المنفذ المتاح للفوترة (تراكمي)"] - df_assign["إجمالي المفوتر (2026)"]
 
-    # شريط التحكم وخيارات الاستعراض
     col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([1.4, 1.3, 0.9])
     with col_ctrl1:
         company_view_scope = st.radio(
@@ -684,7 +720,7 @@ with tab7:
             selected_contract = st.selectbox("📑 اختر العقد الموحد:", list(CONTRACTS_HIERARCHY.keys()))
         else:
             selected_contract = "إجمالي عقود الشركة الخمسة"
-            st.info("💡 الأرصدة الافتتاحية لغير المنفذ وغير المفوتر (إسناد وطوارئ) مدمجة الآن في المعادلات التراكمية.")
+            st.info("💡 جميع الجداول والتقارير معروضة الآن باتجاه عربي أصيل من اليمين إلى اليسار (RTL).")
     with col_ctrl3:
         buf_ass = io.BytesIO()
         with pd.ExcelWriter(buf_ass, engine="openpyxl") as writer:
@@ -721,7 +757,6 @@ with tab7:
         grp_col = "الموقع والعقد"
         table_title = "بيان جميع المناطق الـ 18 بالتفصيل التراكمي (مطابق لملف الإكسيل المصدّر)"
 
-    # بطاقات المؤشرات التراكمية الستة للملاك
     tot_open_unexec = df_grouped["إجمالي افتتاحي غير منفذ (2025)"].sum()
     tot_new_ass = df_grouped["إجمالي الإسناد الجديد (2026)"].sum()
     tot_avail_ass = df_grouped["إجمالي الإسناد المتاح للتنفيذ"].sum()
@@ -741,7 +776,6 @@ with tab7:
     k5.metric("5️⃣ إجمالي المفوتر (2026)", f"{tot_bill_26:,.0f} ريال", f"نسبة الفوترة للمتاح: {(tot_bill_26/tot_avail_bill*100) if tot_avail_bill else 0:.1f}%")
     k6.metric("6️⃣ رصيد WIP الختامي", f"{tot_end_wip:,.0f} ريال", "متاح للتحويل إلى سيولة")
 
-    # الجدول الرئيسي المنسق شاملاً الأرصدة الافتتاحية والحركة التراكمية
     ass_cols = [
         grp_col,
         "افتتاحي غير منفذ 25 (إسناد+طوارئ)",
@@ -780,7 +814,6 @@ with tab7:
     ))
     st.table(build_styled_table(ass_rows, ass_cols))
 
-    # رسم بياني يوضح الحركة التراكمية (الافتتاحي + الجديد مقابل المنفذ والمفوتر والـ WIP)
     fig_ass = px.bar(
         df_grouped, x=grp_col,
         y=[
