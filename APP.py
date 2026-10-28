@@ -327,7 +327,7 @@ tot_eq_26_a = 162616261.0 + 25000000.0 + 8833551.0 + net_26_a
 # ==========================================
 # تقسيم شاشات المنصة (8 تبويبات متكاملة)
 # ==========================================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13 = st.tabs([
     "📈 الملخص التنفيذي",
     "📑 قائمة الدخل التفصيلية",
     "⚖️ قائمة المركز المالي الكاملة",
@@ -335,7 +335,12 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📉 المؤشرات المالية الشاملة (KPIs & DuPont)",
     "🏗️ قوائم دخل المشاريع (2021-2026)",
     "📋 موقف الإسناد والتنفيذ والفوترة",
-    "🔍 تحليل الانحرافات وكفاءة الأصول والعمالة"
+    "🏢 تحليل الشركة (التغيرات والانحرافات)",
+    "📍 عقد تبوك",
+    "📍 عقد الباحة",
+    "📍 عقد عسير",
+    "📍 عقد مكة المكرمة",
+    "📍 عقد الرياض"
 ])
 
 # ------------------------------------------
@@ -1005,385 +1010,32 @@ with tab7:
     """)
 
 # ------------------------------------------
-# التبويب الثامن: تحليل الانحرافات وكفاءة الأصول والعمالة
+# التبويب الثامن: تحليل الشركة + تبويب مستقل لكل عقد
+# (المنطق في contracts_view.py، والبيانات في tab8_dicts.py)
 # ------------------------------------------
-# ------------------------------------------
-# التبويب الثامن: تحليل الانحرافات وكفاءة الأصول والعمالة
-# ------------------------------------------
-# ------------------------------------------
-# التبويب الثامن: تحليل الانحرافات وكفاءة الأصول والعمالة
-# ------------------------------------------
-# ------------------------------------------
-# التبويب الثامن: تحليل الانحرافات وكفاءة الأصول والعمالة
-# ------------------------------------------
+from tab8_dicts import SITES_DETAILED_DB, ASSETS_BY_SITE_DB, PAYROLL_BY_SITE_26
+import contracts_view as cv
+
+cv.setup(SITES_DETAILED_DB, ASSETS_BY_SITE_DB, PAYROLL_BY_SITE_26,
+         PROJECTS_DB, base_regions, build_styled_table)
+
 with tab8:
-    st.subheader("🔍 تحليل الانحرافات المعيارية للتكاليف وقياس كفاءة تشغيل الأصول والعمالة")
+    cv.render_company_tab()
 
-    from tab8_dicts import SITES_DETAILED_DB, ASSETS_BY_SITE_DB, PAYROLL_BY_SITE_26
+with tab9:
+    cv.render_contract_tab("العقد الموحد بتبوك", df_assign)
 
-    # 1. ضبط قاعدة الإيرادات: الإدارة ليس لها إيراد تشغيلي رئيسي (فقط إيرادات استثمار وأخرى)
-    SITES_DETAILED_DB["الادارة (شامل مصنع الأعمدة)"]["rev_shamel"] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+with tab10:
+    cv.render_contract_tab("العقد الموحد بالباحة", df_assign)
 
-    # 2. توزيع إيراد التنفيذ الفعلي (فرق الشركة + مقاولي الباطن) لعام 2026 على المواقع بدقة
-    for reg_name in base_regions:
-        reg_sites = [s for s, d in SITES_DETAILED_DB.items() if d["region"] == reg_name]
-        billed_reg_26 = sum(SITES_DETAILED_DB[s]["rev_shamel"][5] for s in reg_sites)
-        actual_reg_26 = PROJECTS_DB[reg_name]["team_2026"] + PROJECTS_DB[reg_name]["sub_2026"]
-        for s in reg_sites:
-            if billed_reg_26 > 0:
-                SITES_DETAILED_DB[s]["exec_rev_2026"] = SITES_DETAILED_DB[s]["rev_shamel"][5] * (actual_reg_26 / billed_reg_26)
-            else:
-                SITES_DETAILED_DB[s]["exec_rev_2026"] = SITES_DETAILED_DB[s]["rev_shamel"][5]
-    SITES_DETAILED_DB["الادارة (شامل مصنع الأعمدة)"]["exec_rev_2026"] = 0.0
+with tab11:
+    cv.render_contract_tab("العقد الموحد عسير", df_assign)
 
-    # تصنيف المواقع حسب النشاط (استبعاد قراء العدادات لانتهاء أعمالهم في أغسطس وسبتمبر 2026)
-    MAINT_SITES = ["صيانة الباحة", "صيانة عسير", "صيانة مكة", "صيانة تبوك"]
-    READERS_SITES = ["قراء عدادات الباحة", "قراء عدادات مكة", "قراء عدادات تبوك"]
-    UNIFIED_SITES = [s for s in SITES_DETAILED_DB.keys() if s not in MAINT_SITES + READERS_SITES + ["الادارة (شامل مصنع الأعمدة)"]]
+with tab12:
+    cv.render_contract_tab("العقد الموحد بمكة المكرمة", df_assign)
 
-    EXP_CATEGORIES = [
-        ("salaries", "1. الرواتب والأجور وملحقاتها"),
-        ("maint_veh", "2. صيانة وتشغيل السيارات والمعدات"),
-        ("materials", "3. تكلفة مشتريات المواد التشغيلية"),
-        ("subcontractors", "4. تكلفة مقاولي الباطن"),
-        ("rent_trans", "5. مصاريف الإيجارات والنقليات"),
-        ("dep_exp", "6. استهلاك السيارات والمعدات والأصول"),
-        ("lic_exp", "7. تكلفة إصدار التراخيص ورخص الحفريات"),
-        ("penalties", "8. غرامات التأخير ومخالفات المشاريع"),
-        ("camp_exp", "9. تجهيزات ومرافق السكن والمستودعات"),
-        ("ga_exp", "10. مصاريف إدارية وعمومية أخرى"),
-        ("fin_exp", "11. مصاريف وعمولات التمويل البنكية")
-    ]
-    YEARS_LIST = [2021, 2022, 2023, 2024, 2025, 2026]
+with tab13:
+    cv.render_contract_tab("العقد الموحد بالرياض", df_assign)
 
-    # مصفوفة المعايير القياسية لنسبة التكلفة من الإيراد (%) حسب نوع النشاط
-    BENCHMARK_BY_ACTIVITY = {
-        "نشاط العقد الموحد (الإنشاءات والتعزيزات)": {
-            "salaries": 42.0, "maint_veh": 10.0, "materials": 8.0, "subcontractors": 12.0,
-            "rent_trans": 2.5, "dep_exp": 8.0, "lic_exp": 2.5, "penalties": 1.0,
-            "camp_exp": 1.0, "ga_exp": 1.5, "fin_exp": 0.5
-        },
-        "نشاط مشاريع الصيانة (4 مناطق)": {
-            "salaries": 72.0, "maint_veh": 6.5, "materials": 0.5, "subcontractors": 0.0,
-            "rent_trans": 1.0, "dep_exp": 6.0, "lic_exp": 0.1, "penalties": 0.2,
-            "camp_exp": 0.3, "ga_exp": 0.5, "fin_exp": 0.1
-        }
-    }
-
-    def get_site_revs(s_name, use_exec_26=True):
-        d = SITES_DETAILED_DB[s_name]
-        revs = [d["rev_shamel"][i] + d["other_rev"][i] for i in range(5)]
-        r26 = (d["exec_rev_2026"] if use_exec_26 else d["rev_shamel"][5]) + d["other_rev"][5]
-        revs.append(r26)
-        return revs
-
-    def aggregate_sites(site_list, use_exec_26=True):
-        agg_pl = {k: [0.0]*6 for k, _ in EXP_CATEGORIES}
-        agg_rev = [0.0]*6
-        agg_ast = {'total_count': 0, 'fully_dep_count': 0, 'total_cost': 0.0, 'equip_cost': 0.0, 'dep_2026': 0.0, 'nbv_total': 0.0, 'nbv_equip': 0.0}
-        agg_pay = {'hc_total': 0.0, 'hc_saudi': 0.0, 'hc_expat': 0.0, 'hc_admin': 0.0, 'hc_prod': 0.0, 'gross_sal': 0.0, 'overtime': 0.0, 'med_gosi': 0.0, 'vac_eosb': 0.0, 'iqama_ticket': 0.0, 'total_comp': 0.0, 'admin_cost': 0.0, 'prod_cost': 0.0}
-        for s in site_list:
-            if s in SITES_DETAILED_DB:
-                s_revs = get_site_revs(s, use_exec_26)
-                agg_rev = [agg_rev[i] + s_revs[i] for i in range(6)]
-                for k, _ in EXP_CATEGORIES:
-                    agg_pl[k] = [agg_pl[k][i] + SITES_DETAILED_DB[s][k][i] for i in range(6)]
-            if s in ASSETS_BY_SITE_DB:
-                for k in agg_ast: agg_ast[k] += ASSETS_BY_SITE_DB[s][k]
-            if s in PAYROLL_BY_SITE_26:
-                for k in agg_pay: agg_pay[k] += PAYROLL_BY_SITE_26[s][k]
-        return agg_rev, agg_pl, agg_ast, agg_pay
-
-    # ==========================================
-    # شريط القوائم المنسدلة التفاعلية
-    # ==========================================
-    f1, f2, f3, f4 = st.columns(4)
-    with f1:
-        activity_filter = st.selectbox(
-            "1️⃣ نوع النشاط:",
-            ["نشاط العقد الموحد (الإنشاءات والتعزيزات)", "نشاط مشاريع الصيانة (4 مناطق)", "إجمالي الشركة (الموحد + الصيانة)"],
-            key="t8_act"
-        )
-        if activity_filter.startswith("نشاط العقد الموحد"):
-            active_pool = UNIFIED_SITES
-        elif activity_filter.startswith("نشاط مشاريع الصيانة"):
-            active_pool = MAINT_SITES
-        else:
-            active_pool = UNIFIED_SITES + MAINT_SITES
-
-    with f2:
-        scope_filter = st.selectbox(
-            "2️⃣ نطاق الاستعراض:",
-            ["جميع مواقع النشاط المختار", "حسب المنطقة الرئيسية", "موقع فرعي محدد"],
-            key="t8_scope"
-        )
-        if scope_filter == "حسب المنطقة الرئيسية":
-            sel_reg = st.selectbox("اختر المنطقة الرئيسية:", base_regions, key="t8_reg_sel")
-            target_sites = [s for s in active_pool if SITES_DETAILED_DB[s]["region"] == sel_reg]
-            if not target_sites:
-                target_sites = [s for s in SITES_DETAILED_DB.keys() if SITES_DETAILED_DB[s]["region"] == sel_reg and s not in READERS_SITES]
-            target_title = f"{sel_reg} ({activity_filter.split('(')[0].strip()})"
-        elif scope_filter == "موقع فرعي محدد":
-            sel_site = st.selectbox("اختر الموقع الفرعي:", active_pool, key="t8_site_sel")
-            target_sites = [sel_site]
-            target_title = f"موقع {sel_site}"
-        else:
-            target_sites = active_pool
-            target_title = activity_filter
-
-    with f3:
-        disp_metric = st.selectbox(
-            "3️⃣ طريقة العرض:",
-            ["النسبة من الإيراد (%)", "النسبة من إجمالي التكلفة (%)", "القيم المالية (ريال سعودي)", "عرض مزدوج (% الإيراد | % التكلفة)"],
-            key="t8_metric"
-        )
-
-    with f4:
-        selected_years = st.multiselect(
-            "4️⃣ السنوات المعروضة (للمقارنة التاريخية):",
-            options=YEARS_LIST,
-            default=[2021, 2022, 2023, 2024, 2025, 2026],
-            key="t8_yrs"
-        )
-        if not selected_years:
-            selected_years = [2025, 2026]
-        selected_years = sorted(selected_years)
-
-    # تجميع البيانات للاختيار الحالي (مع اعتماد إيراد التنفيذ الفعلي + مقاولي الباطن لعام 2026)
-    targ_rev, targ_pl, targ_ast, targ_pay = aggregate_sites(target_sites, use_exec_26=True)
-    targ_tot_cost = [sum(targ_pl[k][i] for k, _ in EXP_CATEGORIES) for i in range(6)]
-
-    # ==========================================
-    # بطاقات كفاءة الأصول والعمالة (تتغير ديناميكياً مع كل اختيار)
-    # ==========================================
-    st.markdown(f"### ⚡ ملخص كفاءة التشغيل والأصول والعمالة لـ: **{target_title}** (2026)")
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    
-    rev_26_actual = targ_rev[5]
-    sal_to_prod_pct = (targ_pl["salaries"][5] / rev_26_actual * 100) if rev_26_actual > 0 else 0.0
-    prod_per_person = (rev_26_actual / targ_pay["hc_prod"]) if targ_pay["hc_prod"] > 0 else 0.0
-    admin_to_prod_pct = (targ_pay["admin_cost"] / rev_26_actual * 100) if rev_26_actual > 0 else 0.0
-    asset_productivity = (rev_26_actual / targ_ast["equip_cost"] * 100) if targ_ast["equip_cost"] > 0 else 0.0
-    fully_dep_pct = (targ_ast["fully_dep_count"] / targ_ast["total_count"] * 100) if targ_ast["total_count"] > 0 else 0.0
-
-    k1.metric("إيراد الإنتاج المعتمد (2026)", f"{rev_26_actual:,.0f} ريال", "تنفيذ الفرق + مقاولي الباطن")
-    k2.metric("إنتاجية الفرد المنتج (9M)", f"{prod_per_person:,.0f} ريال/عامل", f"عدد المنتجين: {targ_pay['hc_prod']:,.1f}")
-    k3.metric("نسبة الرواتب إلى الإنتاج", f"{sal_to_prod_pct:.1f}%", f"إجمالي الرواتب: {targ_pl['salaries'][5]:,.0f}")
-    k4.metric("نسبة تكلفة إدارة الموقع للإنتاج", f"{admin_to_prod_pct:.1f}%", f"كادر إداري: {targ_pay['hc_admin']:,.1f} ({targ_pay['admin_cost']:,.0f} ريال)")
-    k5.metric("إنتاجية الأصول (من تكلفتها)", f"{asset_productivity:.1f}%", f"أصول ومعدات: {targ_ast['equip_cost']:,.0f} ريال")
-    k6.metric("نسبة المعدات المهلكة دفترياً", f"{fully_dep_pct:.1f}%", f"{targ_ast['fully_dep_count']} من أصل {targ_ast['total_count']} معدة")
-
-    # ==========================================
-    # الجدول الأول: التطور التاريخي وأثر التضخم (بدون عمود المتوسط وبمعادلة تغير مطابقة للعرض)
-    # ==========================================
-    st.markdown(f"### 📊 أولاً: التطور التاريخي لبنود التكاليف وأثر التضخم - **{target_title}**")
-    yr_indices = [YEARS_LIST.index(y) for y in selected_years]
-    hist_cols = ["بند الإيرادات / المصروفات"] + [f"{y}\n({'تنفيذ فعلي 9M' if y==2026 else 'مدققة'})" for y in selected_years] + ["التغير وأثر التضخم (أول سنة ⬅ آخر سنة)"]
-
-    def fmt_cell_t8(val, rv, cv, mode):
-        pr = (val / rv * 100.0) if rv > 0 else 0.0
-        pc = (val / cv * 100.0) if cv > 0 else 0.0
-        vs = f"({abs(val):,.0f})" if val < 0 else f"{val:,.0f}"
-        if mode == "القيم المالية (ريال سعودي)": return vs
-        if mode == "النسبة من الإيراد (%)": return f"{pr:.1f}%" if rv > 0 else "—"
-        if mode == "النسبة من إجمالي التكلفة (%)": return f"{pc:.1f}%" if cv > 0 else "—"
-        return f"{pr:.1f}% | {pc:.1f}%" if (rv > 0 and cv > 0) else "—"
-
-    hist_rows = [
-        ("section", f"أولاً: إجمالي إيرادات الإنتاج المعتمدة - {target_title}", []),
-        ("subtotal", "إجمالي الإيراد المعتمد (شامل تنفيذ الفرق ومقاولي الباطن في 2026)", [f"{targ_rev[i]:,.0f}" for i in yr_indices] + ["أساس تنسيب الإيراد (100%)"])
-    ]
-    hist_rows.append(("section", f"ثانياً: بنود التكاليف والمصروفات ({disp_metric})", []))
-
-    for k_cat, lbl_cat in EXP_CATEGORIES:
-        r_cells = [fmt_cell_t8(targ_pl[k_cat][i], targ_rev[i], targ_tot_cost[i], disp_metric) for i in yr_indices]
-        # حساب التغير بناءً على نفس المؤشر المختار (إيراد أو تكلفة أو قيمة)
-        valid_idx = [i for i in yr_indices if (targ_rev[i] > 0 and targ_tot_cost[i] > 0)]
-        if len(valid_idx) >= 2:
-            i0, i1 = valid_idx[0], valid_idx[-1]
-            if disp_metric == "النسبة من إجمالي التكلفة (%)":
-                p0 = (targ_pl[k_cat][i0] / targ_tot_cost[i0]) * 100.0
-                p1 = (targ_pl[k_cat][i1] / targ_tot_cost[i1]) * 100.0
-                diff = p1 - p0
-                lbl_b = "من التكلفة"
-            else:
-                p0 = (targ_pl[k_cat][i0] / targ_rev[i0]) * 100.0
-                p1 = (targ_pl[k_cat][i1] / targ_rev[i1]) * 100.0
-                diff = p1 - p0
-                lbl_b = "من الإيراد"
-
-            if diff > 1.0:
-                t_str = f"🔴 ارتفاع {lbl_b} (+{diff:.1f}%)"
-            elif diff < -1.0:
-                t_str = f"🟢 انخفاض/وفر {lbl_b} ({diff:.1f}%)"
-            else:
-                t_str = f"🟡 مستقر ({diff:+.1f}%)"
-        else:
-            t_str = "—"
-        hist_rows.append(("item", lbl_cat, r_cells + [t_str]))
-
-    tot_c_cells = [fmt_cell_t8(targ_tot_cost[i], targ_rev[i], targ_tot_cost[i], disp_metric) for i in yr_indices]
-    hist_rows.append(("subtotal", "إجمالي التكاليف والمصروفات", tot_c_cells + ["إجمالي التكلفة"]))
-
-    # صف صافي الربح في النهاية
-    net_cells = []
-    for i in yr_indices:
-        nv = targ_rev[i] - targ_tot_cost[i]
-        npct = (nv / targ_rev[i] * 100.0) if targ_rev[i] > 0 else 0.0
-        ns = f"({abs(nv):,.0f})" if nv < 0 else f"{nv:,.0f}"
-        net_cells.append(f"{ns} ({npct:.1f}%)")
-    hist_rows.append(("total", "صافي الربح / (العجز) التشغيلي ونسبته للإيراد", net_cells + ["النتيجة الصافية"]))
-
-    st.table(build_styled_table(hist_rows, hist_cols))
-
-    # ==========================================
-    # الجدول الثاني: مقارنة التباين بين المواقع (يعمل مع المنطقة والنشاط + تلوين أفضل وأسوأ نسبة + صافي الربح)
-    # ==========================================
-    st.markdown("---")
-    c_comp1, c_comp2 = st.columns([1.5, 1.5])
-    with c_comp1:
-        comp_year = st.selectbox("📅 اختر السنة لمقارنة التباين بين المواقع:", YEARS_LIST, index=5, key="t8_comp_yr")
-    with c_comp2:
-        sites_for_matrix = target_sites if len(target_sites) > 1 else active_pool
-        st.markdown(f"**المواقع الداخلة في المقارنة ({len(sites_for_matrix)} موقعاً):** `{', '.join(sites_for_matrix)}`")
-
-    y_idx = YEARS_LIST.index(comp_year)
-    st.markdown(f"### 🏛️ ثانياً: مصفوفة مقارنة التباين بين المواقع وصافي الربح لعام **{comp_year}** ({disp_metric})")
-    st.markdown("*(يتم تلوين **أفضل موقع كفاءة باللون الأخضر المميز 🟢** و**أسوأ موقع (الأعلى عبئاً / الأقل ربحية) باللون الأحمر 🔴** في كل بند)*")
-
-    # بناء جدول مقارنة المواقع مع التلوين الشرطي لأفضل وأسوأ موقع
-    matrix_records = []
-    raw_ratios_for_styling = []
-    for s_name in sites_for_matrix:
-        s_revs = get_site_revs(s_name, use_exec_26=True)
-        rv = s_revs[y_idx]
-        s_d = SITES_DETAILED_DB[s_name]
-        cv = sum(s_d[k][y_idx] for k, _ in EXP_CATEGORIES)
-        nv = rv - cv
-        npct = (nv / rv * 100.0) if rv > 0 else -999.0
-
-        rec = {
-            "الموقع": s_name,
-            "الإيراد المعتمد": f"{rv:,.0f}",
-            "إجمالي التكلفة": f"{cv:,.0f}",
-        }
-        raw_r = {"الموقع": s_name}
-        for k_cat, lbl_cat in EXP_CATEGORIES[:7]:
-            short_lbl = lbl_cat.split(".")[1].strip()
-            val = s_d[k_cat][y_idx]
-            rec[short_lbl] = fmt_cell_t8(val, rv, cv, disp_metric)
-            raw_r[short_lbl] = (val / cv * 100.0) if (disp_metric == "النسبة من إجمالي التكلفة (%)" and cv > 0) else ((val / rv * 100.0) if rv > 0 else 0.0)
-
-        rec["صافي الربح (ريال)"] = f"({abs(nv):,.0f})" if nv < 0 else f"{nv:,.0f}"
-        rec["نسبة صافي الربح (%)"] = f"{npct:.1f}%" if rv > 0 else "—"
-        raw_r["نسبة صافي الربح (%)"] = npct if rv > 0 else np.nan
-        matrix_records.append(rec)
-        raw_ratios_for_styling.append(raw_r)
-
-    df_matrix_disp = pd.DataFrame(matrix_records)
-    df_matrix_raw = pd.DataFrame(raw_ratios_for_styling)
-
-    def style_best_worst_sites(df_disp, df_raw, cost_cols, profit_cols):
-        styles = pd.DataFrame('direction: rtl; text-align: right; background-color: #FFFFFF; color: #111827;', index=df_disp.index, columns=df_disp.columns)
-        for col in cost_cols:
-            if col in df_raw.columns:
-                valid_s = df_raw[col].replace(0, np.nan).dropna()
-                if len(valid_s) >= 2:
-                    min_idx = valid_s.idxmin()
-                    max_idx = valid_s.idxmax()
-                    styles.loc[min_idx, col] = 'direction: rtl; text-align: right; background-color: #DCFCE7; color: #14532D; font-weight: bold;'
-                    styles.loc[max_idx, col] = 'direction: rtl; text-align: right; background-color: #FEE2E2; color: #991B1B; font-weight: bold;'
-        for col in profit_cols:
-            if col in df_raw.columns:
-                valid_s = df_raw[col].dropna()
-                if len(valid_s) >= 2:
-                    max_idx = valid_s.idxmax()
-                    min_idx = valid_s.idxmin()
-                    styles.loc[max_idx, col] = 'direction: rtl; text-align: right; background-color: #DCFCE7; color: #14532D; font-weight: bold;'
-                    styles.loc[min_idx, col] = 'direction: rtl; text-align: right; background-color: #FEE2E2; color: #991B1B; font-weight: bold;'
-        return styles
-
-    cost_col_names = [lbl.split(".")[1].strip() for _, lbl in EXP_CATEGORIES[:7]]
-    styler_matrix = df_matrix_disp.style.apply(lambda _: style_best_worst_sites(df_matrix_disp, df_matrix_raw, cost_col_names, ["نسبة صافي الربح (%)"]), axis=None)
-    try:
-        styler_matrix = styler_matrix.hide(axis="index")
-    except Exception:
-        pass
-    st.table(styler_matrix)
-
-    # ==========================================
-    # الجدول الثالث الجديد: مقارنة المواقع على مستوى إنتاجية الأفراد، إنتاجية الأصول، وتكلفة إدارة المواقع (2026)
-    # ==========================================
-    st.markdown("---")
-    st.markdown("### 🚀 ثالثاً: مقارنة كفاءة المواقع (إنتاجية الأفراد | إنتاجية الأصول | تكلفة إدارة الموقع إلى الإنتاج - 2026)")
-    st.markdown("توضح هذه المصفوفة كفاءة تشغيل الموارد البشرية والمعدات في كل موقع، مع تمييز **أفضل موقع باللون الأخضر 🟢** و**الأقل كفاءة باللون الأحمر 🔴**:")
-
-    eff_records = []
-    eff_raw = []
-    for s_name in sites_for_matrix:
-        rv26 = get_site_revs(s_name, use_exec_26=True)[5]
-        s_d = SITES_DETAILED_DB[s_name]
-        s_ast = ASSETS_BY_SITE_DB.get(s_name, {})
-        s_pay = PAYROLL_BY_SITE_26.get(s_name, {})
-
-        sal_26 = s_d["salaries"][5]
-        maint_26 = s_d["maint_veh"][5]
-        hc_p = s_pay.get("hc_prod", 0.0)
-        hc_a = s_pay.get("hc_admin", 0.0)
-        adm_cost = s_pay.get("admin_cost", 0.0)
-        eq_cost = s_ast.get("equip_cost", 0.0)
-        eq_nbv = s_ast.get("nbv_equip", 0.0)
-
-        sal_to_prod = (sal_26 / rv26 * 100.0) if rv26 > 0 else np.nan
-        prod_per_emp = (rv26 / hc_p) if hc_p > 0 else np.nan
-        adm_to_prod = (adm_cost / rv26 * 100.0) if rv26 > 0 else np.nan
-        prod_per_asset = (rv26 / eq_cost * 100.0) if eq_cost > 0 else np.nan
-        maint_to_prod = (maint_26 / rv26 * 100.0) if rv26 > 0 else np.nan
-
-        eff_records.append({
-            "الموقع": s_name,
-            "إنتاج الموقع المعتمد (2026)": f"{rv26:,.0f}",
-            "عدد العمالة المنتجة": f"{hc_p:.1f}",
-            "إنتاجية الفرد المنتج (ريال)": f"{prod_per_emp:,.0f}" if pd.notna(prod_per_emp) else "—",
-            "نسبة الراتب إلى الإنتاج (%)": f"{sal_to_prod:.1f}%" if pd.notna(sal_to_prod) else "—",
-            "الطاقم الإداري (عدد / تكلفة)": f"{hc_a:.1f} ({adm_cost:,.0f})",
-            "تكلفة إدارة الموقع إلى الإنتاج (%)": f"{adm_to_prod:.1f}%" if pd.notna(adm_to_prod) else "—",
-            "قيمة المعدات (التاريخية)": f"{eq_cost:,.0f}",
-            "إنتاجية الأصول (الإنتاج ÷ تكلفة الأصل %)": f"{prod_per_asset:.1f}%" if pd.notna(prod_per_asset) else "—",
-            "نسبة صيانة المعدات للإنتاج (%)": f"{maint_to_prod:.1f}%" if pd.notna(maint_to_prod) else "—"
-        })
-        eff_raw.append({
-            "إنتاجية الفرد المنتج (ريال)": prod_per_emp,
-            "نسبة الراتب إلى الإنتاج (%)": sal_to_prod,
-            "تكلفة إدارة الموقع إلى الإنتاج (%)": adm_to_prod,
-            "إنتاجية الأصول (الإنتاج ÷ تكلفة الأصل %)": prod_per_asset,
-            "نسبة صيانة المعدات للإنتاج (%)": maint_to_prod
-        })
-
-    df_eff_disp = pd.DataFrame(eff_records)
-    df_eff_raw = pd.DataFrame(eff_raw)
-
-    # في هذه المصفوفة: الأعلى هو الأفضل في (إنتاجية الفرد، وإنتاجية الأصول)، والأقل هو الأفضل في (نسبة الراتب للإنتاج، تكلفة الإدارة للإنتاج، وصيانة المعدات للإنتاج)
-    styler_eff = df_eff_disp.style.apply(
-        lambda _: style_best_worst_sites(
-            df_eff_disp, df_eff_raw,
-            cost_cols=["نسبة الراتب إلى الإنتاج (%)", "تكلفة إدارة الموقع إلى الإنتاج (%)", "نسبة صيانة المعدات للإنتاج (%)"],
-            profit_cols=["إنتاجية الفرد المنتج (ريال)", "إنتاجية الأصول (الإنتاج ÷ تكلفة الأصل %)"]
-        ),
-        axis=None
-    )
-    try:
-        styler_eff = styler_eff.hide(axis="index")
-    except Exception:
-        pass
-    st.table(styler_eff)
-
-    st.markdown("---")
-    st.markdown("### الملاحظات المنهجية لتحليل الانحرافات وكفاءة التشغيل:")
-    st.markdown("""
-    * **اعتماد إيراد التنفيذ الفعلي لعام 2026:** تم احتساب نسب عام 2026 على أساس إجمالي الإنتاج الفعلي للمشاريع (إنتاجية فرق الشركة + أعمال مقاولي الباطن) نظراً لأن تكاليفهم محملة بالكامل في مصاريف الفترة.
-    * **فصل الأنشطة واستبعاد القراء:** تم تقسيم الاستعراض المعياري إلى نشاط العقد الموحد (الإنشاءات والتعزيزات) ونشاط مشاريع الصيانة (الباحة، عسير، مكة، تبوك)، واستبعاد نشاط قراء العدادات لانتهاء أعماله في أغسطس وسبتمبر 2026.
-    * **قاعدة احتساب تكلفة إدارة الموقع:** تشمل تكلفة الطاقم الإداري والهندسي غير المباشر بالموقع (مدير المشروع، المهندسين، المحاسبين، أمناء المستودعات، حاسبي المستخلصات، المساحين، الرسامين، المراقبين، والحراس)، بينما في مشاريع الصيانة يقتصر العبء الإداري على المحاسبين فقط لأن باقي طاقم الصيانة يحقق إيراداً مباشراً للشركة.
-    """)
-    st.markdown("---")
+st.markdown("---")
 st.markdown("🔒 **منصة دلتا السعودية للتقارير المالية** - إشراف الإدارة المالية | جميع الحقوق محفوظة © 2026")
