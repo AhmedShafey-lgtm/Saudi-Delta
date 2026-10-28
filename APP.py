@@ -981,7 +981,7 @@ with tab7:
     ))
     st.table(build_styled_table(ass_rows, ass_cols))
 
-    fig_ass = px.bar(
+   fig_ass = px.bar(
         df_grouped, x=grp_col,
         y=[
             "إجمالي الإسناد المتاح للتنفيذ",
@@ -993,6 +993,20 @@ with tab7:
         barmode="group",
         title=f"تحليل الأرصدة التراكمية: المتاح للتنفيذ، المتاح للفوترة، المفوتر، والـ WIP الختامي ({selected_contract})",
         text_auto=',.0f'
+    )
+    # تعديل تخطيط المفتاح (Legend) لتجنب التداخل وظهور الألوان والنصوص بشكل متناسق
+    fig_ass.update_layout(
+        font=dict(family="Segoe UI, Tahoma, sans-serif"),
+        legend=dict(
+            title_text="",
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        xaxis=dict(title=""),
+        yaxis=dict(title="الريال السعودي")
     )
     st.plotly_chart(fig_ass, use_container_width=True)
 
