@@ -980,7 +980,6 @@ with tab7:
         ]
     ))
     st.table(build_styled_table(ass_rows, ass_cols))
-
    fig_ass = px.bar(
         df_grouped, x=grp_col,
         y=[
@@ -1009,7 +1008,6 @@ with tab7:
         yaxis=dict(title="الريال السعودي")
     )
     st.plotly_chart(fig_ass, use_container_width=True)
-
     st.markdown("---")
     st.markdown("### ملاحظات الحركة التراكمية للإسناد والتنفيذ:")
     st.markdown("""
