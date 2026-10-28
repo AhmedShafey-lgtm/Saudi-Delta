@@ -1254,7 +1254,6 @@ with tab8:
 
     # بناء جدول مقارنة المواقع مع التلوين الشرطي لأفضل وأسوأ موقع
     matrix_records = []
-    raw_ ratios_for_styling = []
     for s_name in sites_for_matrix:
         s_revs = get_site_revs(s_name, use_exec_26=True)
         rv = s_revs[y_idx]
