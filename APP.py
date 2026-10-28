@@ -1010,6 +1010,9 @@ with tab7:
 # ------------------------------------------
 # التبويب الثامن: تحليل الانحرافات وكفاءة الأصول والعمالة (تفاعلي وديناميكي بالكامل)
 # ------------------------------------------
+# ------------------------------------------
+# التبويب الثامن: تحليل الانحرافات وكفاءة الأصول والعمالة (تفاعلي وديناميكي بالكامل)
+# ------------------------------------------
 with tab8:
     st.subheader("🔍 تحليل الانحرافات المعيارية للتكاليف وقياس كفاءة تشغيل الأصول والعمالة")
 
@@ -1347,6 +1350,127 @@ with tab8:
             df_chart_multi, x="السنة", y=y_col_plot, color="بند التكلفة",
             barmode="group",
             title=f"التطور التاريخي لبنود التكلفة ({y_col_plot}) - {sel_target}",
+            text_auto='.1f' if '%' in y_col_plot else ',.0f'
+        )
+        st.plotly_chart(fig_multi, use_container_width=True)
 
+    # ==========================================
+    # الحالة الثانية: عرض سنة محددة (مقارنة الموقع بمتوسط العقد والشركة ومقارنة المواقع أفقياً)
+    # ==========================================
+    else:
+        yr_idx = YEARS_LIST.index(single_year)
+        st.markdown(f"### 📊 المقارنة المعيارية لهيكل التكاليف في عام **{single_year}** لـ ({sel_target}) مقارنة بـ ({peer_label}) ومتوسط الشركة")
+
+        single_cols = [
+            "بند التكلفة والمصروفات",
+            f"القيمة الفعلية ({single_year})\nريال سعودي",
+            f"نسبة البند من الإيراد\n({sel_target})",
+            f"نسبة البند من الإيراد\n({peer_label})",
+            f"نسبة البند من التكلفة\n({sel_target})",
+            f"نسبة البند من التكلفة\n({peer_label})",
+            f"نسبة البند من التكلفة\n(متوسط مشاريع الشركة)",
+            "الانحراف المعياري عن الشركة\n(وفر 🟢 / تجاوز 🔴)"
+        ]
+
+        rev_s = targ_rev[yr_idx]
+        cost_s = targ_tot_cost[yr_idx]
+        peer_rev_s = peer_rev[yr_idx]
+        peer_cost_s = peer_tot_cost[yr_idx]
+        comp_rev_s = comp_rev[yr_idx]
+        comp_cost_s = comp_tot_cost[yr_idx]
+
+        single_rows = [
+            ("section", f"أولاً: ملخص الإيرادات وإجمالي التكلفة لعام {single_year}", []),
+            ("subtotal", "إجمالي الإيرادات المعتمدة", [rev_s, "100.0%", "100.0%", "—", "—", "—", "أساس الإيراد"]),
+            ("section", f"ثانياً: مقارنة نسب بنود المصروفات من الإيراد ومن إجمالي التكلفة ({single_year})", [])
+        ]
+
+        for k_cat, lbl_cat in EXP_CATEGORIES:
+            v = targ_pl[k_cat][yr_idx]
+            pv = peer_pl[k_cat][yr_idx]
+            cv = comp_pl[k_cat][yr_idx]
+
+            t_pct_rev = (v / rev_s * 100.0) if rev_s > 0 else 0.0
+            p_pct_rev = (pv / peer_rev_s * 100.0) if peer_rev_s > 0 else 0.0
+
+            t_pct_cost = (v / cost_s * 100.0) if cost_s > 0 else 0.0
+            p_pct_cost = (pv / peer_cost_s * 100.0) if peer_cost_s > 0 else 0.0
+            c_pct_cost = (cv / comp_cost_s * 100.0) if comp_cost_s > 0 else 0.0
+
+            var_cost_pts = t_pct_cost - c_pct_cost
+            if abs(var_cost_pts) <= 1.5:
+                status_v = f"🟢 ضمن المعيار ({var_cost_pts:+.1f}%)"
+            elif var_cost_pts > 1.5:
+                status_v = f"🔴 أعلى من معيار الشركة بـ (+{var_cost_pts:.1f}%)"
+            else:
+                status_v = f"🟢 وفر عن معيار الشركة بـ ({var_cost_pts:.1f}%)"
+
+            single_rows.append((
+                "item", lbl_cat,
+                [
+                    v,
+                    f"{t_pct_rev:.1f}%" if rev_s > 0 else "—",
+                    f"{p_pct_rev:.1f}%" if peer_rev_s > 0 else "—",
+                    f"{t_pct_cost:.1f}%" if cost_s > 0 else "—",
+                    f"{p_pct_cost:.1f}%" if peer_cost_s > 0 else "—",
+                    f"{c_pct_cost:.1f}%" if comp_cost_s > 0 else "—",
+                    status_v
+                ]
+            ))
+
+        tot_cost_rev_pct = (cost_s / rev_s * 100.0) if rev_s > 0 else 0.0
+        peer_cost_rev_pct = (peer_cost_s / peer_rev_s * 100.0) if peer_rev_s > 0 else 0.0
+        single_rows.append((
+            "subtotal", "إجمالي التكاليف والمصروفات",
+            [cost_s, f"{tot_cost_rev_pct:.1f}%", f"{peer_cost_rev_pct:.1f}%", "100.0%", "100.0%", "100.0%", "إجمالي التكلفة"]
+        ))
+        net_s_val = rev_s - cost_s
+        net_s_pct = (net_s_val / rev_s * 100.0) if rev_s > 0 else 0.0
+        peer_net_pct = ((peer_rev_s - peer_cost_s) / peer_rev_s * 100.0) if peer_rev_s > 0 else 0.0
+        single_rows.append((
+            "total", f"صافي دخل الفترة ({single_year})",
+            [net_s_val, f"{net_s_pct:.1f}%", f"{peer_net_pct:.1f}%", "—", "—", "—", "🟢 فائض" if net_s_val >= 0 else "🔴 عجز (أو أعمال WIP غير مفوترة)"]
+        ))
+
+        st.table(build_styled_table(single_rows, single_cols))
+
+        # ==========================================
+        # جدول المقارنة الأفقية بين المواقع لنفس السنة (كشف التباين بين المواقع)
+        # ==========================================
+        st.markdown("---")
+        st.markdown(f"### 🏛️ مقارنة التباين بين المواقع لعام **{single_year}** (حسب طريقة العرض: {disp_metric})")
+        c_bench1, c_bench2 = st.columns([1.2, 1.8])
+        with c_bench1:
+            bench_scope = st.selectbox(
+                "نطاق المواقع في المقارنة الأفقية:",
+                ["مواقع نفس العقد / المنطقة المختارة", "جميع مواقع الشركة (22 موقعاً)"],
+                key="t8_bench_scope"
+            )
+        with c_bench2:
+            bench_sites = peer_contract_sites if bench_scope.startswith("مواقع نفس") else all_project_sites
+            st.markdown(f"**عدد المواقع المعروضة في المقارنة:** `{len(bench_sites)}` موقعاً.")
+
+        cross_cols = ["الموقع الفرعي", f"الإيراد ({single_year})", f"إجمالي التكلفة ({single_year})"] + [lbl.split(".")[1].split("(")[0].strip() for _, lbl in EXP_CATEGORIES[:7]]
+        cross_rows = [("section", f"مقارنة هيكل التكاليف بين المواقع في عام {single_year} ({disp_metric})", [])]
+        for s_name in bench_sites:
+            s_d = SITES_DETAILED_DB[s_name]
+            s_rev = s_d["rev_shamel"][yr_idx] + s_d["other_rev"][yr_idx]
+            s_cost = sum(s_d[k][yr_idx] for k, _ in EXP_CATEGORIES)
+            row_vals = [s_rev, s_cost]
+            for k_cat, _ in EXP_CATEGORIES[:7]:
+                v_c = s_d[k_cat][yr_idx]
+                row_vals.append(format_cell_dynamic(v_c, s_rev, s_cost, disp_metric))
+            cross_rows.append(("item", s_name, row_vals))
+
+        st.table(build_styled_table(cross_rows, cross_cols))
+
+    st.markdown("---")
+    st.markdown("### الملاحظات المنهجية لتحليل الانحرافات وكفاءة الأصول والعمالة:")
+    st.markdown("""
+    * **منهجية قياس التباين بين المواقع:** يتم احتساب نسبة كل بند من بنود المصروفات إلى كلٍ من **(إجمالي الإيراد)** و**(إجمالي التكلفة)** داخل نفس السنة المالية، ومقارنتها بمتوسط مواقع نفس العقد ومتوسط الشركة لكشف الانحرافات الهيكلية بدقة.
+    * **تتبع أثر التضخم عبر مدة العقد (2021 – 2026):** يوضح العرض متعدد السنوات التغير الفعلي في الوزن النسبي لكل بند تكلفة من أول سنة نشطة للمشروع حتى عام 2026.
+    * **تصنيف الكادر الإداري مقابل الكادر المنتج للإيراد:** في عقود الإنشاءات والعقد الموحد يُصنف الطاقم الإداري والهندسي والإشرافي (مديرو المشاريع، المهندسون، المحاسبون، أمناء المستودعات، حاسبو الكميات والمستخلصات، المساحون، المراقبون، والحراس) كتكلفة غير مباشرة، بينما في عقود الصيانة يُصنف جميع العاملين كمنتجين للإيراد باستثناء المحاسبين فقط.
+    * **أثر انتهاء أعمال قراء العدادات وإهلاك مصنع الأعمدة:** تشمل بيانات الإدارة إهلاك مصنع الأعمدة الخرسانية بخليص (1.96 مليون ريال في 2026)، وتعكس بيانات قراء العدادات توقف الأعمال خلال شهري أغسطس وسبتمبر 2026 وفق توجيهات الشركة السعودية للطاقة.
+    """)
 st.markdown("---")
 st.markdown("🔒 **منصة دلتا السعودية للتقارير المالية** - إشراف الإدارة المالية | جميع الحقوق محفوظة © 2026")
