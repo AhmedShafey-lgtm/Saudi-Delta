@@ -1,6 +1,15 @@
 import streamlit as st
-import contracts_view as cv
-from tab8_dicts import ASSIGN_2026_BY_SITE
+
+# استيراد ملفات المنصة المساندة مع رسالة واضحة إن كان أحدها قديماً أو غير مرفوع
+try:
+    import contracts_view as cv
+    from tab8_dicts import (SITES_DETAILED_DB, ASSETS_BY_SITE_DB, PAYROLL_BY_SITE_26,
+                            MAKKAH_OPS_DB, ASSIGN_2026_BY_SITE)
+except ImportError as _imp_err:
+    st.error("⚠️ ملف مساند قديم أو غير مرفوع. ارفع النسخ الحديثة من الملفات الثلاثة معاً في نفس المجلد: "
+             "APP.py و contracts_view.py و tab8_dicts.py ثم أعد تشغيل التطبيق (Reboot app). "
+             f"تفاصيل: {_imp_err}")
+    st.stop()
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -977,8 +986,6 @@ with tab7:
 # التبويب الثامن: تحليل الشركة + تبويب مستقل لكل عقد
 # (المنطق في contracts_view.py، والبيانات في tab8_dicts.py)
 # ------------------------------------------
-from tab8_dicts import (SITES_DETAILED_DB, ASSETS_BY_SITE_DB, PAYROLL_BY_SITE_26,
-                        MAKKAH_OPS_DB, ASSIGN_2026_BY_SITE)
 
 cv.setup(SITES_DETAILED_DB, ASSETS_BY_SITE_DB, PAYROLL_BY_SITE_26,
          PROJECTS_DB, base_regions, build_styled_table,
