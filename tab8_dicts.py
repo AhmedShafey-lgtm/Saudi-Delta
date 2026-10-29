@@ -163,19 +163,19 @@ SITES_DETAILED_DB = {
     "region": "منطقة الباحة", "contract": "العقد الموحد بالباحة"
   },
   "صيانة الباحة": {
-    "rev_shamel": [0.0, 12735270.37, 30562707.78, 19559678.9, 23250497.6, 14358112.4],
-    "other_rev": [0.0, 0.0, 0.0, 3588.61, 59999.0, 0.0],
-    "salaries": [0.0, 14720062.84, 13820474.21, 13507291.12, 13407775.11, 10862494.3],
-    "materials": [0.0, 153266.65, 52894.95, 41571.14, 143483.15, 29725.02],
+    "rev_shamel": [13693294.2, 12735270.37, 30562707.78, 19559678.9, 23250497.6, 14358112.4],
+    "other_rev": [70499.0, 0.0, 0.0, 3588.61, 59999.0, 0.0],
+    "salaries": [9489015.75, 14720062.84, 13820474.21, 13507291.12, 13407775.11, 10862494.3],
+    "materials": [29003.37, 153266.65, 52894.95, 41571.14, 143483.15, 29725.02],
     "subcontractors": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    "maint_veh": [0.0, 1027836.74, 939445.57, 765148.83, 773151.74, 726673.21],
-    "rent_trans": [0.0, 523824.17, 185421.0, 106392.0, 119453.0, 101883.67],
-    "dep_exp": [0.0, 227896.54, 154998.23, 260474.53, 525205.49, 484162.34],
+    "maint_veh": [1063921.76, 1027836.74, 939445.57, 765148.83, 773151.74, 726673.21],
+    "rent_trans": [194148.0, 523824.17, 185421.0, 106392.0, 119453.0, 101883.67],
+    "dep_exp": [206668.07, 227896.54, 154998.23, 260474.53, 525205.49, 484162.34],
     "lic_exp": [0.0, 7832.85, 0.0, 0.0, 782.0, 10009.0],
     "penalties": [0.0, 0.0, 14909.53, 4348.59, 0.0, 0.0],
-    "camp_exp": [0.0, 51079.58, 34367.95, 15438.39, 16642.73, 14836.18],
-    "ga_exp": [0.0, 26995.69, 105743.45, 70764.34, 125564.49, 54875.32],
-    "fin_exp": [0.0, 96717.33, 5.0, 227.0, 215724.51, 14.5],
+    "camp_exp": [32921.23, 51079.58, 34367.95, 15438.39, 16642.73, 14836.18],
+    "ga_exp": [46653.42, 26995.69, 105743.45, 70764.34, 125564.49, 54875.32],
+    "fin_exp": [624.48, 96717.33, 5.0, 227.0, 215724.51, 14.5],
     "region": "منطقة الباحة", "contract": "العقد الموحد بالباحة"
   },
   "قراء عدادات الباحة": {
@@ -307,19 +307,19 @@ SITES_DETAILED_DB = {
     "region": "منطقة مكة المكرمة", "contract": "العقد الموحد بمكة المكرمة"
   },
   "صيانة مكة": {
-    "rev_shamel": [0.0, 8673591.84, 27003508.85, 27633995.0, 14349357.65, 11836124.05],
+    "rev_shamel": [5608170.95, 8673591.84, 27003508.85, 27633995.0, 14349357.65, 11836124.05],
     "other_rev": [0.0, 0.0, 0.0, 127691.19, 60942.91, 0.0],
-    "salaries": [0.0, 7674301.56, 10563359.39, 14557737.03, 13941382.48, 8856246.72],
-    "materials": [0.0, 112511.84, 81095.17, 100405.58, 56282.28, 45569.36],
+    "salaries": [3864848.74, 7674301.56, 10563359.39, 14557737.03, 13941382.48, 8856246.72],
+    "materials": [36909.49, 112511.84, 81095.17, 100405.58, 56282.28, 45569.36],
     "subcontractors": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    "maint_veh": [0.0, 961264.32, 1135748.14, 1354895.25, 1381701.33, 1011781.36],
-    "rent_trans": [0.0, 94172.69, 132242.78, 141799.0, 63079.95, 71595.67],
-    "dep_exp": [0.0, 1065898.59, 1504847.79, 1756639.41, 1878311.16, 1031088.94],
+    "maint_veh": [654530.9, 961264.32, 1135748.14, 1354895.25, 1381701.33, 1011781.36],
+    "rent_trans": [79630.0, 94172.69, 132242.78, 141799.0, 63079.95, 71595.67],
+    "dep_exp": [791978.67, 1065898.59, 1504847.79, 1756639.41, 1878311.16, 1031088.94],
     "lic_exp": [0.0, 0.0, 2000.0, 0.0, 0.0, 0.0],
     "penalties": [0.0, 0.0, 11700.0, 4000.0, 7000.0, 20000.0],
-    "camp_exp": [0.0, 70034.48, 90333.87, 55184.96, 65473.66, 39232.69],
-    "ga_exp": [0.0, 82357.28, 54879.05, 77587.42, 49665.83, 32572.59],
-    "fin_exp": [0.0, 31612.26, 0.0, 0.0, 28.56, 130.01],
+    "camp_exp": [27369.33, 70034.48, 90333.87, 55184.96, 65473.66, 39232.69],
+    "ga_exp": [46078.96, 82357.28, 54879.05, 77587.42, 49665.83, 32572.59],
+    "fin_exp": [1973.02, 31612.26, 0.0, 0.0, 28.56, 130.01],
     "region": "منطقة مكة المكرمة", "contract": "العقد الموحد بمكة المكرمة"
   },
   "قراء عدادات مكة": {
@@ -422,4 +422,67 @@ PAYROLL_BY_SITE_26 = {
   "قراء عدادات مكة": {"hc_total": 27.3, "hc_saudi": 27.3, "hc_expat": 0.0, "hc_admin": 5.0, "hc_prod": 22.3, "gross_sal": 1638651.0, "overtime": 0.0, "med_gosi": 271646.0, "vac_eosb": 229337.0, "iqama_ticket": 0.0, "total_comp": 2139635.0, "admin_cost": 414283.0, "prod_cost": 1725351.0},
   "محايل": {"hc_total": 102.1, "hc_saudi": 13.3, "hc_expat": 88.8, "hc_admin": 16.6, "hc_prod": 85.6, "gross_sal": 2862897.0, "overtime": 0.0, "med_gosi": 279941.0, "vac_eosb": 385811.0, "iqama_ticket": 767040.0, "total_comp": 4295689.0, "admin_cost": 1062838.0, "prod_cost": 3232851.0},
   "مكة": {"hc_total": 165.7, "hc_saudi": 8.8, "hc_expat": 156.9, "hc_admin": 29.1, "hc_prod": 136.6, "gross_sal": 4530397.0, "overtime": 3378.0, "med_gosi": 379728.0, "vac_eosb": 644987.0, "iqama_ticket": 1355520.0, "total_comp": 6910632.0, "admin_cost": 1861029.0, "prod_cost": 5049603.0}
+}
+
+
+# ==========================================================
+# مكة: موقف الصيانة وقراء العدادات (نموذج مختلف عن أوامر العمل)
+# الإسناد = المنفذ شهرياً، والفوترة مرتبطة بالتوقيعات وتوفر الميزانية لدى العميل
+# المصدر: ملف أعمال الصيانة وقراء مكة 2026 (سبتمبر) + تقرير غير المصروف 2025
+# ==========================================================
+MAKKAH_OPS_DB = {
+  # صيانة 2026 (يناير-سبتمبر): [المنفذ (= المسند)، المفوتر قبل الضريبة] لكل مجموعة ولكل شهر
+  "maint_2026_groups": {
+    "north": [5544377.0, 2468039.4],
+    "south": [6250081.95, 1698052.85],
+    "khulais": [3592260.0, 1652000.65],
+    "eng": [433645.0, 441053.0],
+  },
+  "maint_2026_months": {1: [1823323.15, 1123461.5], 2: [1791543.1, 1055482.2], 3: [1842857.85, 1061864.2], 4: [1707650.85, 1089482.95], 5: [1719155.0, 878403.35], 6: [1703148.0, 923568.7], 7: [1755331.0, 54069.0], 8: [1761664.0, 51624.0], 9: [1715691.0, 21190.0]},
+  # رصيد 2025 غير المفوتر: [القيمة التقديرية، المستلم جزئياً، المتبقي غير المفوتر]
+  # متبقي خليص كما في ملف المصدر (4,176,496)؛ يُشتبه أن بند ديسمبر هوائي خليص أُدخل 19,552 بدل 195,552 (فرق 176,000)
+  "maint_2025_unbilled": {
+    "north": [10212889.5, 1848235.8, 8364653.7],
+    "south": [8056587.0, 2129454.25, 5927132.75],
+    "khulais": [4352496.0, 0.0, 4176496.0],
+    "eng": [0.0, 0.0, 0.0],
+  },
+  "maint_2025_unbilled_file_total": 18468282.0,
+  # قراء العدادات 2026: [المنفذ، المعتمد من المالية] لكل شهر
+  "readers_2026_months": {1: [344406.0, 180600.0], 2: [345555.26, 129017.26], 3: [242832.9, 133525.9], 4: [331043.62, 126975.62], 5: [330403.0, 27045.0], 6: [380845.74, 138515.74], 7: [346242.0, 0.0], 8: [205456.0, 0.0], 9: [254650.0, 0.0]},
+  "readers_po_issued": 2454181.0,
+  "readers_po_pending": 327254.0,
+  "readers_fin_pending": 1718501.0,
+}
+
+
+# ==========================================================
+# ملخص المواقع (أكتوبر 2026): الإسناد والتنفيذ (فرق الشركة / مقاولو الباطن) والفوترة لكل موقع
+# التنفيذ الكلي = فرق الشركة (أوامر عمل + جزئي + طوارئ) + مقاولو الباطن + عقد بنسبة %
+# المتاح للفوترة = منفذ مرحّل + جزئي سابق + التنفيذ الكلي − التنفيذ الجزئي 2026 − المفوتر
+# المتبقي غير منفذ = افتتاحي + إسناد جديد − (التنفيذ الكلي − عقد بنسبة %)
+# ==========================================================
+ASSIGN_2026_BY_SITE = {
+  "الرياض (إجمالي العقد)": {"open_unexec": 5772120.0, "new_wo": 18435195.78, "new_emerg": 3233799.42, "team_wo": 4606004.66, "team_partial": 4105000.0, "team_emerg": 3233799.42, "sub_works": 5977695.08, "sub_pct_contract": 0.0, "total_exec": 17922499.16, "open_exec_unbilled": 26917781.0, "open_partial": 0.0, "partial_2026": 4105000.0, "billed": 11901878.29, "avail_billing": 28833401.869999997, "remaining_unexec": 9518616.040000005, "contract": "العقد الموحد بالرياض"},
+  "تبوك": {"open_unexec": 462712.52, "new_wo": 2792603.0, "new_emerg": 2518097.0, "team_wo": 2338294.0, "team_partial": 238123.0, "team_emerg": 2518097.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 5094514.0, "open_exec_unbilled": 2558567.0, "open_partial": 0.0, "partial_2026": 238123.0, "billed": 3590734.0, "avail_billing": 3824224.0, "remaining_unexec": 678898.5199999996, "contract": "العقد الموحد بتبوك"},
+  "قراء عدادات تبوك": {"open_unexec": 0.0, "new_wo": 2371283.0, "new_emerg": 0.0, "team_wo": 2371283.0, "team_partial": 0.0, "team_emerg": 0.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 2371283.0, "open_exec_unbilled": 0.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 1224628.0, "avail_billing": 1146655.0, "remaining_unexec": 0.0, "contract": "العقد الموحد بتبوك"},
+  "ضباء": {"open_unexec": 2331150.98, "new_wo": 1539165.0, "new_emerg": 1656700.0, "team_wo": 2254351.0, "team_partial": 1591650.0, "team_emerg": 1656700.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 5502701.0, "open_exec_unbilled": 1335428.0, "open_partial": 0.0, "partial_2026": 1591650.0, "billed": 3650142.0, "avail_billing": 1596337.0, "remaining_unexec": 24314.980000000447, "contract": "العقد الموحد بتبوك"},
+  "الوجه": {"open_unexec": 6984856.84, "new_wo": 4882444.0, "new_emerg": 1337606.0, "team_wo": 7291654.0, "team_partial": 574613.0, "team_emerg": 1337606.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 9203873.0, "open_exec_unbilled": 2442610.0, "open_partial": 0.0, "partial_2026": 574613.0, "billed": 7333474.78, "avail_billing": 3738395.2199999997, "remaining_unexec": 4001033.84, "contract": "العقد الموحد بتبوك"},
+  "حقل": {"open_unexec": 170068.0, "new_wo": 1104434.0, "new_emerg": 427878.0, "team_wo": 1096465.0, "team_partial": 103929.0, "team_emerg": 427878.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 1628272.0, "open_exec_unbilled": 1742479.62, "open_partial": 0.0, "partial_2026": 103929.0, "billed": 2381854.0, "avail_billing": 884968.6200000001, "remaining_unexec": 74108.0, "contract": "العقد الموحد بتبوك"},
+  "املج": {"open_unexec": 2962827.0, "new_wo": 4130554.0, "new_emerg": 1003728.0, "team_wo": 4569292.0, "team_partial": 104586.0, "team_emerg": 1003728.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 5677606.0, "open_exec_unbilled": 415811.0, "open_partial": 0.0, "partial_2026": 104586.0, "billed": 5067232.0, "avail_billing": 921599.0, "remaining_unexec": 2419503.0, "contract": "العقد الموحد بتبوك"},
+  "الباحة": {"open_unexec": 18000000.0, "new_wo": 7834773.0, "new_emerg": 0.0, "team_wo": 18533091.0, "team_partial": 0.0, "team_emerg": 0.0, "sub_works": 6529746.0, "sub_pct_contract": 0.0, "total_exec": 25062837.0, "open_exec_unbilled": 0.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 10714993.0, "avail_billing": 14347844.0, "remaining_unexec": 771936.0, "contract": "العقد الموحد بالباحة"},
+  "المخواة": {"open_unexec": 19024250.0, "new_wo": 617532.0, "new_emerg": 3902368.0, "team_wo": 10636044.0, "team_partial": 0.0, "team_emerg": 3902368.0, "sub_works": 4578767.0, "sub_pct_contract": 0.0, "total_exec": 19117179.0, "open_exec_unbilled": 16417138.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 25000000.0, "avail_billing": 10534317.0, "remaining_unexec": 4426971.0, "contract": "العقد الموحد بالباحة"},
+  "القنفذة": {"open_unexec": 2496635.0, "new_wo": 1328598.0, "new_emerg": 2462024.0, "team_wo": 2047312.0, "team_partial": 0.0, "team_emerg": 2462024.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 4509336.0, "open_exec_unbilled": 7181135.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 5003288.0, "avail_billing": 6687183.0, "remaining_unexec": 1777921.0, "contract": "العقد الموحد بالباحة"},
+  "قراء عدادات الباحة": {"open_unexec": 0.0, "new_wo": 4277999.0, "new_emerg": 0.0, "team_wo": 4277999.0, "team_partial": 0.0, "team_emerg": 0.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 4277999.0, "open_exec_unbilled": 0.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 2828268.0, "avail_billing": 1449731.0, "remaining_unexec": 0.0, "contract": "العقد الموحد بالباحة"},
+  "ابها": {"open_unexec": 7550202.0, "new_wo": 3186959.98, "new_emerg": 5820558.0, "team_wo": 7711208.0, "team_partial": 483627.0, "team_emerg": 5820558.0, "sub_works": 1667965.0, "sub_pct_contract": 0.0, "total_exec": 15683358.0, "open_exec_unbilled": 6126188.0, "open_partial": 1399255.0, "partial_2026": 483627.0, "billed": 5663427.0, "avail_billing": 17061747.0, "remaining_unexec": 874361.9800000004, "contract": "العقد الموحد عسير"},
+  "السراة": {"open_unexec": 2742468.45, "new_wo": 2614163.75, "new_emerg": 1247700.0, "team_wo": 3257501.0, "team_partial": 0.0, "team_emerg": 1247700.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 4505201.0, "open_exec_unbilled": 2000000.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 5930880.0, "avail_billing": 574321.0, "remaining_unexec": 2099131.2, "contract": "العقد الموحد عسير"},
+  "محايل": {"open_unexec": 745488.0, "new_wo": 1046466.97, "new_emerg": 6548673.58, "team_wo": 1368167.42, "team_partial": 58113.0, "team_emerg": 6548673.58, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 7974954.0, "open_exec_unbilled": 1454512.0, "open_partial": 0.0, "partial_2026": 58113.0, "billed": 2442930.0, "avail_billing": 6928423.0, "remaining_unexec": 365674.5499999998, "contract": "العقد الموحد عسير"},
+  "المجاردة": {"open_unexec": 264133.0, "new_wo": 2313180.52, "new_emerg": 3200000.0, "team_wo": 1763015.0, "team_partial": 306228.0, "team_emerg": 3200000.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 5269243.0, "open_exec_unbilled": 1983107.0, "open_partial": 239675.0, "partial_2026": 306228.0, "billed": 3511829.0, "avail_billing": 3673968.0, "remaining_unexec": 508070.51999999955, "contract": "العقد الموحد عسير"},
+  "مكة": {"open_unexec": 14603220.0, "new_wo": 15767549.0, "new_emerg": 6773018.0, "team_wo": 5648404.0, "team_partial": 1615513.0, "team_emerg": 6773018.0, "sub_works": 7239478.0, "sub_pct_contract": 5349768.0, "total_exec": 26626181.0, "open_exec_unbilled": 11416990.0, "open_partial": 0.0, "partial_2026": 1615513.0, "billed": 26736599.0, "avail_billing": 9691059.0, "remaining_unexec": 15867374.0, "contract": "العقد الموحد بمكة المكرمة"},
+  "قراء عدادات مكة": {"open_unexec": 0.0, "new_wo": 2781435.0, "new_emerg": 0.0, "team_wo": 2781435.0, "team_partial": 0.0, "team_emerg": 0.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 2781435.0, "open_exec_unbilled": 195584.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 892354.0, "avail_billing": 2084665.0, "remaining_unexec": 0.0, "contract": "العقد الموحد بمكة المكرمة"},
+  "خليص": {"open_unexec": 9201864.11, "new_wo": 2420122.45, "new_emerg": 899366.53, "team_wo": 4349000.47, "team_partial": 0.0, "team_emerg": 899366.53, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 5248367.0, "open_exec_unbilled": 4273387.0, "open_partial": 9979834.450000001, "partial_2026": 0.0, "billed": 13218543.0, "avail_billing": 6283045.450000003, "remaining_unexec": 7272986.089999998, "contract": "العقد الموحد بمكة المكرمة"},
+  "صيانة الباحة": {"open_unexec": 0.0, "new_wo": 19899141.0, "new_emerg": 0.0, "team_wo": 19899141.0, "team_partial": 0.0, "team_emerg": 0.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 19899141.0, "open_exec_unbilled": 2153873.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 19397483.0, "avail_billing": 2655531.0, "remaining_unexec": 0.0, "contract": "العقد الموحد بالباحة"},
+  "صيانة مكة": {"open_unexec": 0.0, "new_wo": 15820364.0, "new_emerg": 0.0, "team_wo": 15820364.0, "team_partial": 0.0, "team_emerg": 0.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 15820364.0, "open_exec_unbilled": 18468282.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 6259146.0, "avail_billing": 28029500.0, "remaining_unexec": 0.0, "contract": "العقد الموحد بمكة المكرمة"},
+  "صيانة عسير": {"open_unexec": 0.0, "new_wo": 4054812.0, "new_emerg": 0.0, "team_wo": 4054812.0, "team_partial": 0.0, "team_emerg": 0.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 4054812.0, "open_exec_unbilled": 1177233.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 3100955.0, "avail_billing": 2131090.0, "remaining_unexec": 0.0, "contract": "العقد الموحد عسير"},
+  "صيانة تبوك": {"open_unexec": 0.0, "new_wo": 10420529.0, "new_emerg": 0.0, "team_wo": 10420529.0, "team_partial": 0.0, "team_emerg": 0.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 10420529.0, "open_exec_unbilled": 0.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 6262864.0, "avail_billing": 4157665.0, "remaining_unexec": 0.0, "contract": "العقد الموحد بتبوك"},
 }

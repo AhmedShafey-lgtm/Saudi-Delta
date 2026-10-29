@@ -56,8 +56,8 @@ CONTRACT_NOTES = {
     ),
     "العقد الموحد بمكة المكرمة": (
         "مصنع الأعمدة الخرسانية بخليص مُحمَّل ضمن الإدارة (التبويب الثامن) وليس ضمن مراكز هذا العقد. "
-        "إيراد 2026 لصيانة مكة وقراء العدادات هو المنفذ الفعلي من ملفاتهما (المسند = المنفذ شهرياً)، "
-        "والباقي من إيراد المنطقة موزع على مركزي الإنشاءات (مكة وخليص)."
+        "إيراد 2026 لكل مركز هو التنفيذ الفعلي المعتمد من ملخص المواقع (أكتوبر 2026)، "
+        "ولصيانة وقراء مكة المسند = المنفذ شهرياً."
     ),
     "العقد الموحد بالرياض": (
         "العقد يُدار من مكتب واحد، لذلك يُعرض كمركز تكلفة واحد دون مقارنات بين المراكز."
@@ -88,57 +88,37 @@ _pdb = {}
 _base_regions = []
 _build_table = None
 _ops = None
+_assign = {}
 
 
 def setup(sites_db, assets_db, payroll_db, projects_db, base_regions, build_table_fn,
-          exec_overrides=None, makkah_ops=None):
-    """تهيئة الوحدة وتوزيع إيراد التنفيذ الفعلي 2026 على المواقع."""
+          site_exec=None, makkah_ops=None):
+    """تهيئة الوحدة. التنفيذ الفعلي 2026 لكل موقع يُقرأ مباشرة من ملخص المواقع (ASSIGN_2026_BY_SITE):
+    الإنتاج المعتمد = إجمالي التنفيذ، وإنتاج المقاولين = أعمال المقاولين + عقد بنسبة %،
+    وإنتاج فرق الشركة = الباقي (أوامر عمل + جزئي + طوارئ)."""
     global _db, _ast, _pay, _pdb, _base_regions, _build_table, _ops
     _db, _ast, _pay, _pdb = sites_db, assets_db, payroll_db, projects_db
     _base_regions = base_regions
     _build_table = build_table_fn
     _ops = makkah_ops
-    exec_overrides = exec_overrides or {}
+    site_exec = site_exec or {}
+    _assign.clear()
+    _assign.update(site_exec)
 
     # الإدارة ليس لها إيراد تشغيلي رئيسي
     _db[ADMIN_SITE]["rev_shamel"] = [0.0] * 6
-    _db[ADMIN_SITE]["exec_rev_2026"] = 0.0
 
-    # إيراد التنفيذ الفعلي المعتمد للمنطقة (فرق الشركة + مقاولو الباطن):
-    # المراكز التي لها رقم تنفيذ فعلي معتمد (صيانة وقراء مكة) تأخذه مباشرة،
-    # والباقي من إيراد المنطقة يوزع على بقية مراكزها بنسبة مفوترها.
-    for reg in base_regions:
-        reg_sites = [s for s, d in _db.items() if d["region"] == reg]
-        actual = _pdb[reg]["team_2026"] + _pdb[reg]["sub_2026"]
-        fixed = {s: exec_overrides[s] for s in reg_sites if s in exec_overrides}
-        residual = actual - sum(fixed.values())
-        if residual < 0:          # حماية: لا نسمح بباقٍ سالب
-            fixed, residual = {}, actual
-        rest = [s for s in reg_sites if s not in fixed]
-        billed = sum(_db[s]["rev_shamel"][5] for s in rest)
-        for s in fixed:
-            _db[s]["exec_rev_2026"] = fixed[s]
-        for s in rest:
-            if billed > 0:
-                _db[s]["exec_rev_2026"] = _db[s]["rev_shamel"][5] * (residual / billed)
-            else:
-                _db[s]["exec_rev_2026"] = _db[s]["rev_shamel"][5]
-
-    # إنتاج مقاولي الباطن 2026: يُوزَّع من إنتاج المنطقة على مراكز الإنشاءات التي سجلت تكلفة مقاولين،
-    # بنسبة تكلفة المقاولين لكل مركز (وإن لم توجد تكلفة فبنسبة إنتاج المركز)
-    for s in _db:
-        _db[s]["sub_exec_2026"] = 0.0
-    for reg in base_regions:
-        sub_total = _pdb[reg].get("sub_2026", 0.0)
-        if sub_total <= 0:
-            continue
-        cons = [s for s, d in _db.items() if d["region"] == reg and activity_of(s) == "construction"]
-        w = {s: _db[s]["subcontractors"][5] for s in cons if _db[s]["subcontractors"][5] > 0}
-        if not w:
-            w = {s: _db[s]["exec_rev_2026"] for s in cons if _db[s]["exec_rev_2026"] > 0}
-        tw = sum(w.values())
-        for s, x in w.items():
-            _db[s]["sub_exec_2026"] = min(sub_total * x / tw, _db[s]["exec_rev_2026"])
+    for s, d in _db.items():
+        e = site_exec.get(s)
+        if e is not None:
+            d["exec_rev_2026"] = e["total_exec"]
+            d["sub_exec_2026"] = e["sub_works"] + e["sub_pct_contract"]
+        elif s == ADMIN_SITE:
+            d["exec_rev_2026"] = 0.0
+            d["sub_exec_2026"] = 0.0
+        else:   # موقع غير وارد في الملخص: نعتمد المفوتر كإنتاج مؤقت
+            d["exec_rev_2026"] = d["rev_shamel"][5]
+            d["sub_exec_2026"] = 0.0
 
 
 # ==========================================
@@ -457,7 +437,7 @@ def _eff_core(sites):
 def sub_ratio_text(core):
     if core["sub_prod"] > 0:
         return pct(core["sub_pct"])
-    return "لا إنتاج مسجل" if core["sub_cost"] > 0 else "—"
+    return "لا إنتاج مسجل" if core["sub_cost"] >= 50000 else "—"
 
 
 def efficiency_df(centers):
@@ -908,24 +888,28 @@ def makkah_ops_section():
     rex = sum(v[0] for v in rm.values())
     rap = sum(v[1] for v in rm.values())
     st.markdown("#### ثانياً: قراء العدادات (فرق إعادة الوصل والفصل والمسح وقراءة الاستهلاك)")
-    b1, b2, b3, b4 = st.columns(4)
+    rs = _assign.get("قراء عدادات مكة", {}) if _assign else {}
+    rbill = rs.get("billed", 0.0)
+    b1, b2, b3, b4, b5 = st.columns(5)
     b1.metric("المنفذ 2026 (يناير-سبتمبر)", f"{rex:,.0f} ريال", "= المسند")
     b2.metric("صادر له أمر شراء (PO)", f"{ops['readers_po_issued']:,.0f} ريال",
               f"باقي إصدار PO: {ops['readers_po_pending']:,.0f}")
     b3.metric("معتمد من المالية", f"{rap:,.0f} ريال", f"{safe_div(rap, rex, 100):.1f}% من المنفذ")
-    b4.metric("بانتظار اعتماد المالية", f"{ops['readers_fin_pending']:,.0f} ريال", "من الصادر له PO", delta_color="inverse")
+    b4.metric("المفوتر 2026", f"{rbill:,.0f} ريال", f"{safe_div(rbill, rex, 100):.1f}% من المنفذ")
+    b5.metric("غير مفوتر (شامل رصيد 2025)", f"{rs.get('avail_billing', 0.0):,.0f} ريال",
+              f"رصيد 2025: {rs.get('open_exec_unbilled', 0.0):,.0f}", delta_color="inverse")
     rcols = ["الشهر", "المنفذ (= المسند)", "معتمد من المالية", "غير معتمد", "نسبة الاعتماد"]
     rrows = [("section", "الحركة الشهرية 2026", [])]
     for m, (e, a) in sorted(rm.items()):
         rrows.append(("item", MONTHS_AR[m], [e, a, e - a, pct(safe_div(a, e, 100)) if e else "—"]))
     rrows.append(("total", "الإجمالي", [rex, rap, rex - rap, pct(safe_div(rap, rex, 100))]))
     st.table(_build_table(rrows, rcols))
-    st.caption("مراحل القراء: تنفيذ ⬅ إصدار أمر شراء ⬅ اعتماد المالية ⬅ فاتورة. تتوفر في الملف المرحلتان الأولى والثالثة "
-               "وإجمالي الصادر له أمر شراء فقط، ولذلك لا يُحسب هنا رقم «مفوتر» للقراء.")
+    st.caption("مراحل القراء: تنفيذ ⬅ إصدار أمر شراء ⬅ اعتماد المالية ⬅ فاتورة. المفوتر وغير المفوتر من ملخص المواقع، "
+               "والتفصيل الشهري للمنفذ ومعتمد المالية من ملف القراء.")
 
     with st.expander("⚠️ ملاحظات جودة بيانات هذا القسم"):
         st.markdown("""
-        * **رصيد 2025 غير المفوتر:** الملف يعرض 18,468,282 ريالاً، والمعروض هنا 18,644,282 بعد تصحيح بند «هوائي خليص والكامل - ديسمبر 2025» الذي أُدخل متبقيه 19,552 بدل 195,552 (فرق 176,000).
+        * **رصيد 2025 غير المفوتر:** المعتمد 18,468,282 ريالاً كما في ملخص المواقع. يُشتبه أن بند «هوائي خليص والكامل - ديسمبر 2025» أُدخل متبقيه 19,552 بدل 195,552، فإن صح فالرصيد الفعلي 18,644,282 (فرق 176,000).
         * **خليص والكامل:** ورقة «صيانة 2026 خليص والكامل» لا تتضمن سبتمبر (إجمالي 3,202,260)، بينما الورقة الرئيسية تتضمنه (3,592,260). المعتمد هنا الورقة الرئيسية.
         * **عمود «المحصل»:** يساوي المفوتر في كل الصفوف، فلا يدل على تحصيل نقدي فعلي ولم يُستخدم.
         * **المهندسون والتحكم:** المفوتر يزيد عن المنفذ بنحو 7,408 ريال (فروق شهرية في المستخلصات).
@@ -961,7 +945,8 @@ def reconciliation(contract):
     with st.expander("🧮 مطابقة مجموع المراكز مع قائمة دخل المنطقة (فحص جودة البيانات)"):
         st.table(pd.DataFrame(recs).style.hide(axis="index") if hasattr(pd.DataFrame, "style") else pd.DataFrame(recs))
         st.caption("الفروق تعني أن بيانات المراكز التفصيلية لا تغطي كل ما في قائمة دخل المنطقة في تلك السنة "
-                   "(مثلاً مراكز غير مرفوعة أو بنود مسجلة على مستوى المنطقة فقط).")
+                   "(مثلاً مراكز غير مرفوعة أو بنود مسجلة على مستوى المنطقة فقط). إيراد 2026 للمراكز مأخوذ من ملخص المواقع (أكتوبر 2026) "
+                   "وقد يختلف عن إيراد التنفيذ المسجل للمنطقة في قوائم دخل المشاريع.")
 
 
 # ==========================================
