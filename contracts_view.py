@@ -55,7 +55,9 @@ CONTRACT_NOTES = {
         "ولا يعكس الأداء التشغيلي المعتاد."
     ),
     "العقد الموحد بمكة المكرمة": (
-        "مصنع الأعمدة الخرسانية بخليص مُحمَّل ضمن الإدارة (التبويب الثامن) وليس ضمن مراكز هذا العقد."
+        "مصنع الأعمدة الخرسانية بخليص مُحمَّل ضمن الإدارة (التبويب الثامن) وليس ضمن مراكز هذا العقد. "
+        "إيراد 2026 لصيانة مكة وقراء العدادات هو المنفذ الفعلي من ملفاتهما (المسند = المنفذ شهرياً)، "
+        "والباقي من إيراد المنطقة موزع على مركزي الإنشاءات (مكة وخليص)."
     ),
     "العقد الموحد بالرياض": (
         "العقد يُدار من مكتب واحد، لذلك يُعرض كمركز تكلفة واحد دون مقارنات بين المراكز."
@@ -85,29 +87,58 @@ _pay = {}
 _pdb = {}
 _base_regions = []
 _build_table = None
+_ops = None
 
 
-def setup(sites_db, assets_db, payroll_db, projects_db, base_regions, build_table_fn):
+def setup(sites_db, assets_db, payroll_db, projects_db, base_regions, build_table_fn,
+          exec_overrides=None, makkah_ops=None):
     """تهيئة الوحدة وتوزيع إيراد التنفيذ الفعلي 2026 على المواقع."""
-    global _db, _ast, _pay, _pdb, _base_regions, _build_table
+    global _db, _ast, _pay, _pdb, _base_regions, _build_table, _ops
     _db, _ast, _pay, _pdb = sites_db, assets_db, payroll_db, projects_db
     _base_regions = base_regions
     _build_table = build_table_fn
+    _ops = makkah_ops
+    exec_overrides = exec_overrides or {}
 
     # الإدارة ليس لها إيراد تشغيلي رئيسي
     _db[ADMIN_SITE]["rev_shamel"] = [0.0] * 6
     _db[ADMIN_SITE]["exec_rev_2026"] = 0.0
 
-    # إيراد التنفيذ الفعلي المعتمد للمنطقة (فرق الشركة + مقاولو الباطن) يوزع على مواقعها بنسبة مفوترها
+    # إيراد التنفيذ الفعلي المعتمد للمنطقة (فرق الشركة + مقاولو الباطن):
+    # المراكز التي لها رقم تنفيذ فعلي معتمد (صيانة وقراء مكة) تأخذه مباشرة،
+    # والباقي من إيراد المنطقة يوزع على بقية مراكزها بنسبة مفوترها.
     for reg in base_regions:
         reg_sites = [s for s, d in _db.items() if d["region"] == reg]
-        billed = sum(_db[s]["rev_shamel"][5] for s in reg_sites)
         actual = _pdb[reg]["team_2026"] + _pdb[reg]["sub_2026"]
-        for s in reg_sites:
+        fixed = {s: exec_overrides[s] for s in reg_sites if s in exec_overrides}
+        residual = actual - sum(fixed.values())
+        if residual < 0:          # حماية: لا نسمح بباقٍ سالب
+            fixed, residual = {}, actual
+        rest = [s for s in reg_sites if s not in fixed]
+        billed = sum(_db[s]["rev_shamel"][5] for s in rest)
+        for s in fixed:
+            _db[s]["exec_rev_2026"] = fixed[s]
+        for s in rest:
             if billed > 0:
-                _db[s]["exec_rev_2026"] = _db[s]["rev_shamel"][5] * (actual / billed)
+                _db[s]["exec_rev_2026"] = _db[s]["rev_shamel"][5] * (residual / billed)
             else:
                 _db[s]["exec_rev_2026"] = _db[s]["rev_shamel"][5]
+
+    # إنتاج مقاولي الباطن 2026: يُوزَّع من إنتاج المنطقة على مراكز الإنشاءات التي سجلت تكلفة مقاولين،
+    # بنسبة تكلفة المقاولين لكل مركز (وإن لم توجد تكلفة فبنسبة إنتاج المركز)
+    for s in _db:
+        _db[s]["sub_exec_2026"] = 0.0
+    for reg in base_regions:
+        sub_total = _pdb[reg].get("sub_2026", 0.0)
+        if sub_total <= 0:
+            continue
+        cons = [s for s, d in _db.items() if d["region"] == reg and activity_of(s) == "construction"]
+        w = {s: _db[s]["subcontractors"][5] for s in cons if _db[s]["subcontractors"][5] > 0}
+        if not w:
+            w = {s: _db[s]["exec_rev_2026"] for s in cons if _db[s]["exec_rev_2026"] > 0}
+        tw = sum(w.values())
+        for s, x in w.items():
+            _db[s]["sub_exec_2026"] = min(sub_total * x / tw, _db[s]["exec_rev_2026"])
 
 
 # ==========================================
@@ -395,69 +426,90 @@ COMPARE_COST_COLS = [lbl for _, lbl in COMPARE_COLS]
 # ==========================================
 # مصفوفة الكفاءة 2026 (العمالة والأصول) - بدون القراء
 # ==========================================
+def own_production(site):
+    """إنتاج الفرق الذاتية 2026 = الإنتاج المعتمد − إنتاج مقاولي الباطن."""
+    d = _db[site]
+    return d["exec_rev_2026"] - d.get("sub_exec_2026", 0.0)
+
+
+def _eff_core(sites):
+    """أرقام الكفاءة المجمعة: كل النسب مبنية على إنتاج الفرق الذاتية، وتكلفة المقاولين على إنتاجهم."""
+    a = aggregate(sites)
+    prod = sum(_db[s]["exec_rev_2026"] for s in sites)
+    sub_prod = sum(_db[s].get("sub_exec_2026", 0.0) for s in sites)
+    own = prod - sub_prod
+    sub_cost = a["pl"]["subcontractors"][5]
+    return {
+        "a": a, "prod": prod, "sub_prod": sub_prod, "own": own, "sub_cost": sub_cost,
+        "hc_prod": a["pay"]["hc_prod"], "hc_admin": a["pay"]["hc_admin"],
+        "admin_cost": a["pay"]["admin_cost"], "sal": a["pl"]["salaries"][5],
+        "maint": a["pl"]["maint_veh"][5], "equip": a["ast"]["equip_cost"],
+        "cnt": a["ast"]["total_count"], "fd": a["ast"]["fully_dep_count"],
+        "ppe": safe_div(own, a["pay"]["hc_prod"]),
+        "sal_pct": safe_div(a["pl"]["salaries"][5], own, 100),
+        "adm_pct": safe_div(a["pay"]["admin_cost"], own, 100),
+        "asset_prod": safe_div(own, a["ast"]["equip_cost"], 100),
+        "maint_pct": safe_div(a["pl"]["maint_veh"][5], own, 100),
+        "sub_pct": safe_div(sub_cost, sub_prod, 100) if sub_prod > 0 else np.nan,
+    }
+
+
+def sub_ratio_text(core):
+    if core["sub_prod"] > 0:
+        return pct(core["sub_pct"])
+    return "لا إنتاج مسجل" if core["sub_cost"] > 0 else "—"
+
+
 def efficiency_df(centers):
     recs, raws = [], []
     for s in centers:
-        rv = site_revs(s)[5]
-        d = _db[s]
-        ast = _ast.get(s, {})
-        pay = _pay.get(s, {})
-        sal = d["salaries"][5]
-        maint = d["maint_veh"][5]
-        hc_p, hc_a = pay.get("hc_prod", 0.0), pay.get("hc_admin", 0.0)
-        adm = pay.get("admin_cost", 0.0)
-        eq = ast.get("equip_cost", 0.0)
-        ppe = safe_div(rv, hc_p)
-        s2p = safe_div(sal, rv, 100)
-        a2p = safe_div(adm, rv, 100)
-        pa = safe_div(rv, eq, 100)
-        m2p = safe_div(maint, rv, 100)
-        cnt, fd = ast.get("total_count", 0), ast.get("fully_dep_count", 0)
+        k = _eff_core([s])
+        hc_a = k["hc_admin"]
         recs.append({
             "المركز": s,
-            "الإنتاج المعتمد (2026)": money(rv),
-            "العمالة المنتجة": f"{hc_p:.1f}",
-            "إنتاجية الفرد (ريال)": f"{ppe:,.0f}" if pd.notna(ppe) else "—",
-            "الرواتب إلى الإنتاج (%)": pct(s2p) if pd.notna(s2p) else "—",
-            "الطاقم الإداري (عدد / تكلفة)": f"{hc_a:.1f} ({adm:,.0f})",
-            "الإدارة إلى الإنتاج (%)": pct(a2p) if pd.notna(a2p) else "—",
-            "قيمة المعدات التاريخية": money(eq),
-            "إنتاجية الأصول (%)": pct(pa) if pd.notna(pa) else "—",
-            "صيانة المعدات إلى الإنتاج (%)": pct(m2p) if pd.notna(m2p) else "—",
-            "معدات مهلكة دفترياً": f"{fd} من {cnt}" if cnt else "—",
+            "الإنتاج المعتمد (2026)": money(k["prod"]),
+            "إنتاج المقاولين": money(k["sub_prod"]),
+            "إنتاج الفرق الذاتية": money(k["own"]),
+            "العمالة المنتجة": f"{k['hc_prod']:.1f}",
+            "إنتاجية الفرد (ريال)": nz(k["ppe"]),
+            "الرواتب إلى إنتاج الفرق (%)": nz(k["sal_pct"], "{:.1f}", "%"),
+            "تكلفة المقاولين": money(k["sub_cost"]),
+            "تكلفة المقاولين إلى إنتاجهم (%)": sub_ratio_text(k),
+            "الطاقم الإداري (عدد / تكلفة)": f"{hc_a:.1f} ({k['admin_cost']:,.0f})",
+            "الإدارة إلى إنتاج الفرق (%)": nz(k["adm_pct"], "{:.1f}", "%"),
+            "قيمة المعدات التاريخية": money(k["equip"]),
+            "إنتاجية الأصول (%)": nz(k["asset_prod"], "{:.1f}", "%"),
+            "صيانة المعدات إلى إنتاج الفرق (%)": nz(k["maint_pct"], "{:.1f}", "%"),
+            "معدات مهلكة دفترياً": f"{k['fd']} من {k['cnt']}" if k["cnt"] else "—",
         })
         raws.append({
-            "إنتاجية الفرد (ريال)": ppe, "الرواتب إلى الإنتاج (%)": s2p,
-            "الإدارة إلى الإنتاج (%)": a2p, "إنتاجية الأصول (%)": pa,
-            "صيانة المعدات إلى الإنتاج (%)": m2p,
+            "إنتاجية الفرد (ريال)": k["ppe"], "الرواتب إلى إنتاج الفرق (%)": k["sal_pct"],
+            "تكلفة المقاولين إلى إنتاجهم (%)": k["sub_pct"],
+            "الإدارة إلى إنتاج الفرق (%)": k["adm_pct"], "إنتاجية الأصول (%)": k["asset_prod"],
+            "صيانة المعدات إلى إنتاج الفرق (%)": k["maint_pct"],
         })
     return pd.DataFrame(recs), pd.DataFrame(raws)
 
 
-EFF_LOWER = ["الرواتب إلى الإنتاج (%)", "الإدارة إلى الإنتاج (%)", "صيانة المعدات إلى الإنتاج (%)"]
+EFF_LOWER = ["الرواتب إلى إنتاج الفرق (%)", "تكلفة المقاولين إلى إنتاجهم (%)",
+             "الإدارة إلى إنتاج الفرق (%)", "صيانة المعدات إلى إنتاج الفرق (%)"]
 EFF_HIGHER = ["إنتاجية الفرد (ريال)", "إنتاجية الأصول (%)"]
+EFF_NOTE = ("إنتاج المقاولين يُخصم من إنتاج الموقع قبل حساب إنتاجية الفرد والرواتب والإدارة وإنتاجية الأصول وصيانة المعدات، "
+            "فتعكس كفاءة فرق الشركة وأصولها فقط، وتُقاس تكلفة المقاولين بنسبتها إلى إنتاجهم وحدهم. "
+            "إنتاج المقاولين على مستوى المنطقة، ويُوزَّع على مراكزها بنسبة تكلفة مقاوليها (تقدير).")
 
 
 def efficiency_kpis(sites):
-    """بطاقات الكفاءة: تستبعد القراء (انتهى مشروعهم)."""
+    """بطاقات الكفاءة: تستبعد القراء (انتهى مشروعهم) وتخصم إنتاج المقاولين."""
     eff_sites = [s for s in sites if activity_of(s) in ("construction", "maintenance")]
-    a = aggregate(eff_sites)
-    rv = a["rev"][5]
+    k = _eff_core(eff_sites)
     return {
-        "sites": eff_sites,
-        "rev": rv,
-        "hc_prod": a["pay"]["hc_prod"],
-        "hc_admin": a["pay"]["hc_admin"],
-        "admin_cost": a["pay"]["admin_cost"],
-        "sal": a["pl"]["salaries"][5],
-        "prod_per_person": safe_div(rv, a["pay"]["hc_prod"]),
-        "sal_pct": safe_div(a["pl"]["salaries"][5], rv, 100),
-        "adm_pct": safe_div(a["pay"]["admin_cost"], rv, 100),
-        "asset_prod": safe_div(rv, a["ast"]["equip_cost"], 100),
-        "equip_cost": a["ast"]["equip_cost"],
-        "fd_pct": safe_div(a["ast"]["fully_dep_count"], a["ast"]["total_count"], 100),
-        "fd": a["ast"]["fully_dep_count"],
-        "cnt": a["ast"]["total_count"],
+        "sites": eff_sites, "rev": k["prod"], "sub_prod": k["sub_prod"], "own": k["own"],
+        "sub_cost": k["sub_cost"], "sub_pct": k["sub_pct"], "sub_text": sub_ratio_text(k),
+        "hc_prod": k["hc_prod"], "hc_admin": k["hc_admin"], "admin_cost": k["admin_cost"],
+        "sal": k["sal"], "prod_per_person": k["ppe"], "sal_pct": k["sal_pct"], "adm_pct": k["adm_pct"],
+        "asset_prod": k["asset_prod"], "equip_cost": k["equip"],
+        "fd_pct": safe_div(k["fd"], k["cnt"], 100), "fd": k["fd"], "cnt": k["cnt"],
     }
 
 
@@ -702,17 +754,23 @@ def render_company_tab():
         for c, cs in eff_entities:
             k = efficiency_kpis(cs)
             recs.append({
-                "العقد": c, "الإنتاج المعتمد (2026)": money(k["rev"]), "العمالة المنتجة": f"{k['hc_prod']:.1f}",
-                "إنتاجية الفرد (ريال)": nz(k["prod_per_person"]), "الرواتب إلى الإنتاج (%)": nz(k["sal_pct"], "{:.1f}", "%"),
-                "الإدارة إلى الإنتاج (%)": nz(k["adm_pct"], "{:.1f}", "%"),
+                "العقد": c, "الإنتاج المعتمد (2026)": money(k["rev"]), "إنتاج المقاولين": money(k["sub_prod"]),
+                "إنتاج الفرق الذاتية": money(k["own"]), "العمالة المنتجة": f"{k['hc_prod']:.1f}",
+                "إنتاجية الفرد (ريال)": nz(k["prod_per_person"]),
+                "الرواتب إلى إنتاج الفرق (%)": nz(k["sal_pct"], "{:.1f}", "%"),
+                "تكلفة المقاولين": money(k["sub_cost"]),
+                "تكلفة المقاولين إلى إنتاجهم (%)": k["sub_text"],
+                "الإدارة إلى إنتاج الفرق (%)": nz(k["adm_pct"], "{:.1f}", "%"),
                 "قيمة المعدات التاريخية": money(k["equip_cost"]), "إنتاجية الأصول (%)": nz(k["asset_prod"], "{:.1f}", "%"),
                 "معدات مهلكة دفترياً": f"{k['fd']} من {k['cnt']} ({nz(k['fd_pct'], '{:.0f}', '%')})" if k["cnt"] else "—",
             })
-            raws.append({"إنتاجية الفرد (ريال)": k["prod_per_person"], "الرواتب إلى الإنتاج (%)": k["sal_pct"],
-                         "الإدارة إلى الإنتاج (%)": k["adm_pct"], "إنتاجية الأصول (%)": k["asset_prod"]})
+            raws.append({"إنتاجية الفرد (ريال)": k["prod_per_person"], "الرواتب إلى إنتاج الفرق (%)": k["sal_pct"],
+                         "تكلفة المقاولين إلى إنتاجهم (%)": k["sub_pct"],
+                         "الإدارة إلى إنتاج الفرق (%)": k["adm_pct"], "إنتاجية الأصول (%)": k["asset_prod"]})
         show_df(pd.DataFrame(recs), raw=pd.DataFrame(raws),
-                lower_better=["الرواتب إلى الإنتاج (%)", "الإدارة إلى الإنتاج (%)"],
+                lower_better=["الرواتب إلى إنتاج الفرق (%)", "تكلفة المقاولين إلى إنتاجهم (%)", "الإدارة إلى إنتاج الفرق (%)"],
                 higher_better=["إنتاجية الفرد (ريال)", "إنتاجية الأصول (%)"])
+    st.caption(EFF_NOTE)
 
     # ---- الإدارة ----
     st.markdown("---")
@@ -735,6 +793,7 @@ def render_company_tab():
     * **الإيراد المعتمد 2026:** هو إيراد التنفيذ الفعلي (فرق الشركة + مقاولو الباطن) بعد المراجعة، موزعاً على مراكز كل منطقة، وعلى هذا الأساس تُحسب نسب 2026.
     * **نتيجة المراكز:** لا تشمل تكاليف الإدارة والمصنع (قسم خامساً) ولا الزكاة وإيرادات إعادة التقييم، لذلك فهي مؤشر أداء تشغيلي للمراكز وليست الربح المحاسبي.
     * **مقارنات الكفاءة:** تقتصر على الإنشاءات والصيانة، ولا تشمل قراء العدادات.
+    * **إنتاج المقاولين:** يُخصم من إنتاج الموقع في كل نسب الكفاءة (إنتاجية الفرد، الرواتب، الإدارة، الأصول، صيانة المعدات)، وتكلفة المقاولين تُقاس بنسبتها إلى إنتاجهم وحدهم.
     """)
 
 
@@ -782,6 +841,96 @@ def assignment_section(contract, df_assign):
                  y=[needed[2], needed[5], needed[6], needed[7], needed[8]],
                  barmode="group", title=f"أرصدة الإسناد والتنفيذ والفوترة - {contract}")
     st.plotly_chart(finish_fig(fig), use_container_width=True)
+
+
+# ==========================================
+# مكة: موقف الصيانة وقراء العدادات
+# ==========================================
+MONTHS_AR = {1: "يناير", 2: "فبراير", 3: "مارس", 4: "أبريل", 5: "مايو", 6: "يونيو",
+             7: "يوليو", 8: "أغسطس", 9: "سبتمبر"}
+OPS_GROUPS = [("north", "شمال مكة (عمليات + هوائي + محطات)"), ("south", "جنوب مكة (عمليات + هوائي + محطات)"),
+              ("khulais", "خليص والكامل (أرضي + هوائي)"), ("eng", "مهندسو الحماية والتشغيل والتحكم")]
+
+
+def makkah_ops_section():
+    ops = _ops
+    if not ops:
+        return
+    st.markdown("### 🔧 موقف الصيانة وقراء العدادات - مكة")
+    st.caption("مشاريع الصيانة والقراء تُستلم أعمالها شهرياً وتُنفَّذ في الشهر نفسه، فالمسند = المنفذ دائماً. "
+               "الفوترة هي التي تتأخر: تتوقف على استكمال التوقيعات وتوفر الميزانية لدى العميل. "
+               "لذلك يُقاس هنا الفرق بين المنفذ والمفوتر (وليس بين المسند والمنفذ).")
+
+    g26, g25, mm = ops["maint_2026_groups"], ops["maint_2025_unbilled"], ops["maint_2026_months"]
+    ex26 = sum(v[0] for v in g26.values())
+    bl26 = sum(v[1] for v in g26.values())
+    un26 = ex26 - bl26
+    un25 = sum(v[2] for v in g25.values())
+    st.markdown("#### أولاً: صيانة مكة (فرق التغطية والورديات)")
+    a1, a2, a3, a4 = st.columns(4)
+    a1.metric("المنفذ 2026 (يناير-سبتمبر)", f"{ex26:,.0f} ريال", "= المسند")
+    a2.metric("المفوتر 2026", f"{bl26:,.0f} ريال", f"{safe_div(bl26, ex26, 100):.1f}% من المنفذ")
+    a3.metric("غير مفوتر 2026", f"{un26:,.0f} ريال", f"{safe_div(un26, ex26, 100):.1f}% من المنفذ", delta_color="inverse")
+    a4.metric("غير مفوتر من 2025", f"{un25:,.0f} ريال", f"الإجمالي المتراكم: {un25 + un26:,.0f}", delta_color="inverse")
+
+    cols = ["المجموعة", "غير مفوتر من 2025", "المنفذ 2026", "المفوتر 2026", "غير مفوتر 2026",
+            "إجمالي غير مفوتر", "نسبة فوترة 2026"]
+    rows = [("section", "الأرصدة غير المفوترة حسب المجموعة (قبل الضريبة)", [])]
+    t = [0.0] * 5
+    for key, lbl in OPS_GROUPS:
+        e, b = g26[key]
+        u25 = g25[key][2]
+        u26 = e - b
+        vals = [u25, e, b, u26, u25 + u26]
+        t = [t[i] + vals[i] for i in range(5)]
+        rows.append(("item", lbl, vals + [pct(safe_div(b, e, 100)) if e else "—"]))
+    rows.append(("total", "الإجمالي", t + [pct(safe_div(t[2], t[1], 100))]))
+    st.table(_build_table(rows, cols))
+
+    mcols = ["الشهر", "المنفذ (= المسند)", "المفوتر", "غير مفوتر", "نسبة الفوترة"]
+    mrows = [("section", "الحركة الشهرية 2026", [])]
+    longm = []
+    for m, (e, b) in sorted(mm.items()):
+        mrows.append(("item", MONTHS_AR[m], [e, b, e - b, pct(safe_div(b, e, 100)) if e else "—"]))
+        longm.append({"الشهر": MONTHS_AR[m], "البيان": "المنفذ", "القيمة": e})
+        longm.append({"الشهر": MONTHS_AR[m], "البيان": "المفوتر", "القيمة": b})
+    mrows.append(("total", "الإجمالي", [ex26, bl26, un26, pct(safe_div(bl26, ex26, 100))]))
+    st.table(_build_table(mrows, mcols))
+    fig = px.bar(pd.DataFrame(longm), x="الشهر", y="القيمة", color="البيان", barmode="group",
+                 title="صيانة مكة 2026: المنفذ مقابل المفوتر شهرياً",
+                 category_orders={"الشهر": [MONTHS_AR[m] for m in sorted(mm)]})
+    st.plotly_chart(finish_fig(fig), use_container_width=True)
+    st.caption("انخفاض نسبة الفوترة في يوليو وأغسطس وسبتمبر طبيعي لأن مستخلصاتها لم تكتمل توقيعاتها بعد، "
+               "أما الأشهر القديمة غير المفوترة فتستدعي المتابعة مع العميل.")
+
+    # ---- القراء ----
+    rm = ops["readers_2026_months"]
+    rex = sum(v[0] for v in rm.values())
+    rap = sum(v[1] for v in rm.values())
+    st.markdown("#### ثانياً: قراء العدادات (فرق إعادة الوصل والفصل والمسح وقراءة الاستهلاك)")
+    b1, b2, b3, b4 = st.columns(4)
+    b1.metric("المنفذ 2026 (يناير-سبتمبر)", f"{rex:,.0f} ريال", "= المسند")
+    b2.metric("صادر له أمر شراء (PO)", f"{ops['readers_po_issued']:,.0f} ريال",
+              f"باقي إصدار PO: {ops['readers_po_pending']:,.0f}")
+    b3.metric("معتمد من المالية", f"{rap:,.0f} ريال", f"{safe_div(rap, rex, 100):.1f}% من المنفذ")
+    b4.metric("بانتظار اعتماد المالية", f"{ops['readers_fin_pending']:,.0f} ريال", "من الصادر له PO", delta_color="inverse")
+    rcols = ["الشهر", "المنفذ (= المسند)", "معتمد من المالية", "غير معتمد", "نسبة الاعتماد"]
+    rrows = [("section", "الحركة الشهرية 2026", [])]
+    for m, (e, a) in sorted(rm.items()):
+        rrows.append(("item", MONTHS_AR[m], [e, a, e - a, pct(safe_div(a, e, 100)) if e else "—"]))
+    rrows.append(("total", "الإجمالي", [rex, rap, rex - rap, pct(safe_div(rap, rex, 100))]))
+    st.table(_build_table(rrows, rcols))
+    st.caption("مراحل القراء: تنفيذ ⬅ إصدار أمر شراء ⬅ اعتماد المالية ⬅ فاتورة. تتوفر في الملف المرحلتان الأولى والثالثة "
+               "وإجمالي الصادر له أمر شراء فقط، ولذلك لا يُحسب هنا رقم «مفوتر» للقراء.")
+
+    with st.expander("⚠️ ملاحظات جودة بيانات هذا القسم"):
+        st.markdown("""
+        * **رصيد 2025 غير المفوتر:** الملف يعرض 18,468,282 ريالاً، والمعروض هنا 18,644,282 بعد تصحيح بند «هوائي خليص والكامل - ديسمبر 2025» الذي أُدخل متبقيه 19,552 بدل 195,552 (فرق 176,000).
+        * **خليص والكامل:** ورقة «صيانة 2026 خليص والكامل» لا تتضمن سبتمبر (إجمالي 3,202,260)، بينما الورقة الرئيسية تتضمنه (3,592,260). المعتمد هنا الورقة الرئيسية.
+        * **عمود «المحصل»:** يساوي المفوتر في كل الصفوف، فلا يدل على تحصيل نقدي فعلي ولم يُستخدم.
+        * **المهندسون والتحكم:** المفوتر يزيد عن المنفذ بنحو 7,408 ريال (فروق شهرية في المستخلصات).
+        * **الأرقام قبل ضريبة القيمة المضافة** في كل الجداول.
+        """)
 
 
 # ==========================================
@@ -875,13 +1024,16 @@ def render_contract_tab(contract, df_assign=None):
               f"{(mg26 - mg25):+.1f} نقطة عن 2025" if pd.notna(mg26) and pd.notna(mg25) else "—")
     ek = efficiency_kpis(target)
     if ek["sites"]:
-        e1, e2, e3, e4, e5 = st.columns(5)
-        e1.metric("إنتاجية الفرد المنتج", f"{nz(ek['prod_per_person'])} ريال", f"المنتجون: {ek['hc_prod']:.1f}")
-        e2.metric("الرواتب إلى الإنتاج", nz(ek["sal_pct"], "{:.1f}", "%"), f"{ek['sal']:,.0f} ريال")
-        e3.metric("إدارة الموقع إلى الإنتاج", nz(ek["adm_pct"], "{:.1f}", "%"),
+        e1, e2, e3, e4, e5, e6 = st.columns(6)
+        e1.metric("إنتاجية الفرد (فرق الشركة)", f"{nz(ek['prod_per_person'])} ريال", f"المنتجون: {ek['hc_prod']:.1f}")
+        e2.metric("الرواتب إلى إنتاج الفرق", nz(ek["sal_pct"], "{:.1f}", "%"), f"{ek['sal']:,.0f} ريال")
+        e3.metric("تكلفة المقاولين إلى إنتاجهم", ek["sub_text"],
+                  f"إنتاجهم {ek['sub_prod']:,.0f} | تكلفتهم {ek['sub_cost']:,.0f}")
+        e4.metric("إدارة الموقع إلى إنتاج الفرق", nz(ek["adm_pct"], "{:.1f}", "%"),
                   f"كادر إداري: {ek['hc_admin']:.1f}")
-        e4.metric("إنتاجية الأصول", nz(ek["asset_prod"], "{:.1f}", "%"), f"أصول: {ek['equip_cost']:,.0f}")
-        e5.metric("معدات مهلكة دفترياً", nz(ek["fd_pct"], "{:.0f}", "%"), f"{ek['fd']} من {ek['cnt']}")
+        e5.metric("إنتاجية الأصول", nz(ek["asset_prod"], "{:.1f}", "%"), f"أصول: {ek['equip_cost']:,.0f}")
+        e6.metric("معدات مهلكة دفترياً", nz(ek["fd_pct"], "{:.0f}", "%"), f"{ek['fd']} من {ek['cnt']}")
+        st.caption(f"إنتاج فرق الشركة {ek['own']:,.0f} ريال = الإنتاج المعتمد {ek['rev']:,.0f} − إنتاج المقاولين {ek['sub_prod']:,.0f}.")
         if len(ek["sites"]) < len(target):
             st.caption("مؤشرات الكفاءة تستثني قراء العدادات لانتهاء المشروع.")
     else:
@@ -973,12 +1125,16 @@ def render_contract_tab(contract, df_assign=None):
         shown = True
     if "readers" in groups:
         st.caption("قراء العدادات مستبعدون من الكفاءة لانتهاء المشروع (أغسطس وسبتمبر 2026).")
+    st.caption(EFF_NOTE)
     if not shown:
         st.info("لا توجد مراكز إنشاءات أو صيانة في هذا العقد.")
 
     # ---- خامساً: الإسناد ----
     st.markdown("---")
     assignment_section(contract, df_assign)
+    if contract == "العقد الموحد بمكة المكرمة":
+        st.markdown("---")
+        makkah_ops_section()
 
     # ---- مطابقة ----
     st.markdown("---")
