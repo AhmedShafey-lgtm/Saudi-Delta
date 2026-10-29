@@ -1,4 +1,5 @@
 import streamlit as st
+import contracts_view as cv
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -26,9 +27,36 @@ st.markdown("""
     li {
         text-align: right !important;
     }
+    /* شريط التبويبات: تمرير أفقي ظاهر عند كثرة التبويبات */
     div[data-baseweb="tab-list"] {
         direction: rtl !important;
         justify-content: flex-start !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        padding-bottom: 8px !important;
+        scrollbar-width: thin;
+        scrollbar-color: #1E3A8A #E5E7EB;
+    }
+    div[data-baseweb="tab-list"] button[role="tab"] {
+        flex: 0 0 auto !important;
+        white-space: nowrap !important;
+    }
+    div[data-baseweb="tab-list"]::-webkit-scrollbar {
+        height: 8px;
+    }
+    div[data-baseweb="tab-list"]::-webkit-scrollbar-track {
+        background: #E5E7EB;
+        border-radius: 4px;
+    }
+    div[data-baseweb="tab-list"]::-webkit-scrollbar-thumb {
+        background: #1E3A8A;
+        border-radius: 4px;
+    }
+    /* الرسوم البيانية: اتجاه LTR داخل الرسم حتى لا تُقص وسيلة الإيضاح، والنص العربي يظهر صحيحاً */
+    .js-plotly-plot, .js-plotly-plot div, .js-plotly-plot span, .js-plotly-plot text {
+        direction: ltr !important;
+        text-align: left !important;
     }
     div[data-testid="stHorizontalBlock"] {
         direction: rtl !important;
@@ -1000,7 +1028,7 @@ with tab7:
         title=f"تحليل الأرصدة التراكمية: المتاح للتنفيذ، المتاح للفوترة، المفوتر، والـ WIP الختامي ({selected_contract})",
         text_auto=',.0f'
     )
-    st.plotly_chart(fig_ass, use_container_width=True)
+    st.plotly_chart(cv.finish_fig(fig_ass), use_container_width=True)
 
     st.markdown("---")
     st.markdown("### ملاحظات الحركة التراكمية للإسناد والتنفيذ:")
@@ -1014,7 +1042,6 @@ with tab7:
 # (المنطق في contracts_view.py، والبيانات في tab8_dicts.py)
 # ------------------------------------------
 from tab8_dicts import SITES_DETAILED_DB, ASSETS_BY_SITE_DB, PAYROLL_BY_SITE_26
-import contracts_view as cv
 
 cv.setup(SITES_DETAILED_DB, ASSETS_BY_SITE_DB, PAYROLL_BY_SITE_26,
          PROJECTS_DB, base_regions, build_styled_table)

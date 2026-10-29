@@ -113,6 +113,20 @@ def setup(sites_db, assets_db, payroll_db, projects_db, base_regions, build_tabl
 # ==========================================
 # دوال مساعدة
 # ==========================================
+
+def finish_fig(fig, legend_below=True):
+    """ضبط الرسوم: وسيلة إيضاح أفقية أسفل الرسم بدون قص، وهوامش كافية، وخط واضح."""
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="center", x=0.5,
+                    title_text="", font=dict(size=12), itemwidth=70, tracegroupgap=4),
+        margin=dict(l=40, r=20, t=60, b=110),
+        title=dict(x=0.5, xanchor="center", font=dict(size=15)),
+        font=dict(family="Segoe UI, Tahoma, sans-serif", size=12),
+        height=480,
+    )
+    fig.update_xaxes(title_text=None)
+    return fig
+
 def activity_of(site):
     if site == ADMIN_SITE:
         return "admin"
@@ -244,6 +258,18 @@ def style_table(df_disp, raw=None, lower_better=(), higher_better=(), impact_col
 
 def show_df(df_disp, **kw):
     st.table(style_table(df_disp, **kw))
+
+
+def style_fig(fig, legend_rows=2):
+    """وسيلة إيضاح أفقية أسفل الرسم (تمنع تداخل النصوص العربية) وهوامش مناسبة."""
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="top", y=-0.16, xanchor="center", x=0.5,
+                    title_text="", font=dict(size=12), itemsizing="constant", tracegroupgap=2),
+        margin=dict(l=10, r=10, t=55, b=40 + 28 * legend_rows),
+        font=dict(family="Segoe UI, Tahoma, sans-serif", size=12),
+        xaxis_title_text=None,
+    )
+    return fig
 
 
 # ==========================================
@@ -549,12 +575,12 @@ def render_company_tab():
             if pd.notna(m):
                 long_mg.append({"السنة": str(y), "العقد": c, "هامش النتيجة %": round(m, 1)})
     with ch1:
-        st.plotly_chart(px.bar(pd.DataFrame(long_rev), x="السنة", y="الإيراد", color="العقد",
-                               title="الإيراد المعتمد حسب العقد"), use_container_width=True)
+        st.plotly_chart(finish_fig(px.bar(pd.DataFrame(long_rev), x="السنة", y="الإيراد", color="العقد",
+                               title="الإيراد المعتمد حسب العقد")), use_container_width=True)
     with ch2:
         if long_mg:
-            st.plotly_chart(px.line(pd.DataFrame(long_mg), x="السنة", y="هامش النتيجة %", color="العقد",
-                                    markers=True, title="هامش نتيجة المراكز حسب العقد"),
+            st.plotly_chart(finish_fig(px.line(pd.DataFrame(long_mg), x="السنة", y="هامش النتيجة %", color="العقد",
+                                    markers=True, title="هامش نتيجة المراكز حسب العقد")),
                             use_container_width=True)
 
     # ---- ثانياً: التطور التاريخي ----
@@ -755,7 +781,7 @@ def assignment_section(contract, df_assign):
     fig = px.bar(d, x="المنطقة تحت العقد",
                  y=[needed[2], needed[5], needed[6], needed[7], needed[8]],
                  barmode="group", title=f"أرصدة الإسناد والتنفيذ والفوترة - {contract}")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(finish_fig(fig), use_container_width=True)
 
 
 # ==========================================
@@ -921,12 +947,12 @@ def render_contract_tab(contract, df_assign=None):
             show_df(pd.DataFrame(mg_recs + [tm]))
         g1, g2 = st.columns(2)
         with g1:
-            st.plotly_chart(px.bar(pd.DataFrame(long_rev), x="السنة", y="الإيراد", color="المركز",
-                                   title="الإيراد المعتمد حسب المركز"), use_container_width=True)
+            st.plotly_chart(finish_fig(px.bar(pd.DataFrame(long_rev), x="السنة", y="الإيراد", color="المركز",
+                                   title="الإيراد المعتمد حسب المركز")), use_container_width=True)
         with g2:
             if long_mg:
-                st.plotly_chart(px.line(pd.DataFrame(long_mg), x="السنة", y="هامش النتيجة %", color="المركز",
-                                        markers=True, title="هامش نتيجة المراكز"), use_container_width=True)
+                st.plotly_chart(finish_fig(px.line(pd.DataFrame(long_mg), x="السنة", y="هامش النتيجة %", color="المركز",
+                                        markers=True, title="هامش نتيجة المراكز")), use_container_width=True)
     else:
         st.caption("مركز واحد: راجع الجدول التاريخي أعلاه.")
 
