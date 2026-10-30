@@ -138,6 +138,8 @@ def compute(ctx):
     bs["ca"][2] = ctx["tot_ca_26_a"]
     bs["assets"][2] = ctx["tot_assets_26_a"]
     bs["equity"][2] = ctx["tot_eq_26_a"]
+    bs["cl"][2] = ctx.get("cl_26", bs["cl"][2])
+    bs["liab"][2] = ctx.get("liab_26", bs["liab"][2])
     cf = {k: list(v) for k, v in CF_STATIC.items()}
     accrued = [0.0, 0.0, ctx["accrued_rev_26"]]
 

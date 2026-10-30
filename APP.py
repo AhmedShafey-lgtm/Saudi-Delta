@@ -141,9 +141,27 @@ CONTRACTS_HIERARCHY = {
 # ==========================================
 st.sidebar.header("⚙️ مركز رفع وتحديث البيانات")
 
-uploaded_tb = st.sidebar.file_uploader("1️⃣ رفع ميزان المراجعة العام (Excel/CSV)", type=["xlsx", "csv"], key="tb_up")
-uploaded_proj_pl = st.sidebar.file_uploader("2️⃣ رفع تحديث قوائم دخل المشاريع (Excel)", type=["xlsx"], key="proj_up")
-uploaded_assign = st.sidebar.file_uploader("3️⃣ رفع نموذج الإسناد والتنفيذ الشهري الموحد (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True, key="assign_up")
+import hmac, os
+def _upload_password():
+    try:
+        return str(st.secrets["UPLOAD_PASSWORD"]), True
+    except Exception:
+        pw = os.environ.get("UPLOAD_PASSWORD")
+        return (pw, True) if pw else ("Delta@2026", False)
+
+_pw_real, _pw_custom = _upload_password()
+_pw_in = st.sidebar.text_input("🔒 كلمة سر مركز التحديث", type="password", key="up_pw")
+UP_UNLOCKED = bool(_pw_in) and hmac.compare_digest(_pw_in.encode("utf-8"), _pw_real.encode("utf-8"))
+if UP_UNLOCKED:
+    st.sidebar.success("🔓 مركز التحديث مفتوح")
+else:
+    st.sidebar.info("🔒 المركز مقفل: أدخل كلمة السر لرفع أو تعديل البيانات (العرض متاح للجميع).")
+if UP_UNLOCKED and not _pw_custom:
+    st.sidebar.warning("كلمة السر الافتراضية قيد الاستخدام. عيّن UPLOAD_PASSWORD في إعدادات Secrets لتغييرها.")
+
+uploaded_tb = st.sidebar.file_uploader("1️⃣ رفع ميزان المراجعة العام (Excel/CSV)", type=["xlsx", "csv"], key="tb_up", disabled=not UP_UNLOCKED)
+uploaded_proj_pl = st.sidebar.file_uploader("2️⃣ رفع تحديث قوائم دخل المشاريع (Excel)", type=["xlsx"], key="proj_up", disabled=not UP_UNLOCKED)
+uploaded_assign = st.sidebar.file_uploader("3️⃣ رفع نموذج الإسناد والتنفيذ الشهري الموحد (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True, key="assign_up", disabled=not UP_UNLOCKED)
 
 st.sidebar.markdown("---")
 st.sidebar.header("🎯 إعدادات التنفيذ والإيراد المؤجل (2026)")
@@ -151,7 +169,9 @@ deferred_rev_2025 = st.sidebar.number_input(
     "الإيراد المؤجل المرحل من 2025 (ريال)",
     value=14697741.0,
     step=100000.0,
-    format="%.0f"
+    format="%.0f",
+    disabled=not UP_UNLOCKED,
+    key="deferred_in"
 )
 
 # ==========================================
@@ -371,16 +391,25 @@ ebt_25 = ebit_25 + fin_25 + gain_ppe_25 + reval_25 + other_rev_25
 ebt_26_b = ebit_26_b + fin_26 + gain_ppe_26 + reval_26 + other_rev_26
 ebt_26_a = ebit_26_a + fin_26 + gain_ppe_26 + reval_26 + other_rev_26
 
-zakat_tax_24, zakat_tax_25, zakat_tax_26 = -4133419.0, -3939343.0, 0.0
+zakat_tax_24, zakat_tax_25 = -4133419.0, -3939343.0
+# الزكاة وضريبة الدخل المحتسبة من تبويب الحاسبة (تُطبق على 2026 عند تفعيل خيار الاعتماد)
+ZK_APPLY = bool(st.session_state.get("zk_apply", False))
+ZK_CUR = float(st.session_state.get("zk_cur_2026", 0.0)) if ZK_APPLY else 0.0
+ZK_DTA = float(st.session_state.get("zk_dta_adj_2026", 0.0)) if (ZK_APPLY and st.session_state.get("zk_apply_dt", False)) else 0.0
+zakat_tax_26 = -(ZK_CUR - ZK_DTA)
 net_24, net_25 = ebt_24 + zakat_tax_24, ebt_25 + zakat_tax_25
-net_26_b, net_26_a = ebt_26_b, ebt_26_a
+net_26_b, net_26_a = ebt_26_b + zakat_tax_26, ebt_26_a + zakat_tax_26
 
 tot_ca_26_b = 107025487.0
 tot_ca_26_a = tot_ca_26_b + accrued_rev_26
-tot_assets_26_b = 155181964.0 + tot_ca_26_b
-tot_assets_26_a = 155181964.0 + tot_ca_26_a
-tot_eq_26_b = 189212339.0
+tot_nca_26 = 155181964.0 + ZK_DTA
+tot_assets_26_b = tot_nca_26 + tot_ca_26_b
+tot_assets_26_a = tot_nca_26 + tot_ca_26_a
+tot_eq_26_b = 189212339.0 + zakat_tax_26
 tot_eq_26_a = 162616261.0 + 25000000.0 + 8833551.0 + net_26_a
+cl_26 = 59000848.0 + ZK_CUR
+liab_26 = 72995112.0 + ZK_CUR
+dta_26 = 309330.0 + ZK_DTA
 
 
 # ---- سياق مشترك للملخص التنفيذي وتبويب المؤشرات ----
@@ -405,6 +434,8 @@ EX_CTX = dict(
     team_exec_total_26=team_exec_total_26, sub_exec_total_26=sub_exec_total_26,
     dso_billed_26=dso_billed_26, dso_total_26=dso_total_26, dio_26=dio_26, dpo_26=dpo_26, ccc_26=ccc_26,
     PAYROLL=PAYROLL_BY_SITE_26, ASSIGN=ASSIGN_2026_BY_SITE,
+    cl_26=cl_26, liab_26=liab_26, dta_26=dta_26, ZK_CUR=ZK_CUR, ZK_DTA=ZK_DTA,
+    zakat_tax_24=zakat_tax_24, zakat_tax_25=zakat_tax_25, zakat_tax_26=zakat_tax_26,
 )
 
 # ==========================================
@@ -506,9 +537,9 @@ with tab3:
         ("item", "الممتلكات والآلات والمعدات ومشاريع تحت التنفيذ، صافي", [115314870, 109582482, 112931800, 112931800]),
         ("item", "دفعات مقدمة لشراء ممتلكات وآلات ومعدات", [1759631, 2850850, 2850850, 2850850]),
         ("item", "عقارات استثمارية، صافي (أرض حي المصيف بالرياض)", [12180000, 13947604, 13947604, 13947604]),
-        ("item", "أصول ضريبية مؤجلة", [309330, 309330, 309330, 309330]),
+        ("item", "أصول ضريبية مؤجلة", [309330, 309330, 309330 + ZK_DTA, 309330 + ZK_DTA]),
         ("item", "استثمارات متاحة للبيع (صناديق أصول وبخيت ورصانة)", [15000000, 20142380, 25142380, 25142380]),
-        ("subtotal", "إجمالي الأصول غير المتداولة", [144563831, 146832646, 155181964, 155181964]),
+        ("subtotal", "إجمالي الأصول غير المتداولة", [144563831, 146832646, tot_nca_26, tot_nca_26]),
         
         ("section", "ثانياً: الأصول المتداولة (Current Assets)", []),
         ("item", "النقد وما في حكمه (حسابات البنوك والصناديق النقدية)", [32470427, 31159527, 30649316, 30649316]),
@@ -538,9 +569,9 @@ with tab3:
         ("item", "المخصصات (مخصص إخلاء مشاريع ومكافآت عاملين)", [21096296, 19909421, 16379994, 16379994]),
         ("item", "قروض وتسهيلات قصيرة الأجل (مرابحات مصرف الراجحي بالصافي)", [0, 10701784, 16518837, 16518837]),
         ("item", "إيرادات مؤجلة (دفعات مقدمة من شركة الكهرباء للعقد الموحد)", [32133523, 14697741, 0, 0]),
-        ("item", "مخصص الزكاة الشرعية وضريبة الدخل", [2482568, 2525730, 146673, 146673]),
-        ("subtotal", "إجمالي الالتزامات المتداولة", [73321855, 75542928, 59000848, 59000848]),
-        ("subtotal", "إجمالي الالتزامات (Total Liabilities)", [99837936, 91641928, 72995112, 72995112]),
+        ("item", "مخصص الزكاة الشرعية وضريبة الدخل", [2482568, 2525730, 146673 + ZK_CUR, 146673 + ZK_CUR]),
+        ("subtotal", "إجمالي الالتزامات المتداولة", [73321855, 75542928, cl_26, cl_26]),
+        ("subtotal", "إجمالي الالتزامات (Total Liabilities)", [99837936, 91641928, liab_26, liab_26]),
         ("total", "إجمالي حقوق الملكية والالتزامات", [265819870, 290125340, tot_assets_26_b, tot_assets_26_a])
     ]
     st.table(build_styled_table(bs_rows, bs_columns))
@@ -562,14 +593,14 @@ with tab4:
     ]
     cf_rows = [
         ("section", "أولاً: التدفقات النقدية من الأنشطة التشغيلية", []),
-        ("item", "صافي ربح الفترة قبل الزكاة وضريبة الدخل", [48144081, 38932990, net_26_a]),
+        ("item", "صافي ربح الفترة قبل الزكاة وضريبة الدخل", [48144081, 38932990, ebt_26_a]),
         ("section", "التعديلات لتسوية صافي الربح قبل الزكاة إلى التدفق النقدي التشغيلي:", []),
         ("item", "الاستهلاكات (إهلاك الممتلكات والآلات والمعدات ومصنع الأعمدة)", [20959063, 25511647, 18740011]),
         ("item", "أرباح إعادة تقييم عقارات استثمارية", [-6287500, -1767604, 0]),
         ("item", "صافي حركة المخصصات (مخصص إخلاء مشاريع ومكافآت)", [996000, -1186875, -3529430]),
         ("item", "أرباح رأسمالية من بيع ممتلكات وآلات ومعدات", [-125757, -1256086, -3228647]),
         ("item", "مكون وفائدة مخصص التزامات المزايا المحددة للموظفين (نهاية الخدمة)", [3173886, 4932000, 3987416]),
-        ("subtotal", "الربح التشغيلي النقدي قبل التغيرات في رأس المال العامل", [66859773, 65166072, net_26_a + 15969350]),
+        ("subtotal", "الربح التشغيلي النقدي قبل التغيرات في رأس المال العامل", [66859773, 65166072, ebt_26_a + 15969350]),
         
         ("section", "التغيرات في بنود الأصول والالتزامات التشغيلية (رأس المال العامل):", []),
         ("item", "المخزون", [-145501, 84637, -165094]),
