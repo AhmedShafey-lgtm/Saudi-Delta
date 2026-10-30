@@ -450,7 +450,7 @@ def _styled_formula_df(df, formula_col):
     first = df.columns[0]
 
     def fn(_):
-        sty = pd.DataFrame("direction: rtl; text-align: right; background-color: #FFFFFF; color: #111827;",
+        sty = pd.DataFrame("direction: rtl; text-align: center; vertical-align: middle; font-size: 1.05rem; background-color: #FFFFFF; color: #111827;",
                            index=df.index, columns=df.columns)
         if formula_col and formula_col in df.columns:
             sty[formula_col] = ("direction: rtl; text-align: right; background-color: #EAF1FF; color: #0B2A6F; "
@@ -458,6 +458,9 @@ def _styled_formula_df(df, formula_col):
         return sty
 
     s = df.style.apply(fn, axis=None)
+    s = s.set_table_styles([{'selector': 'th', 'props': [('text-align', 'center'), ('font-size', '1.05rem')]},
+                            {'selector': 'td', 'props': [('padding', '8px 10px')]}])
+    s = s.set_properties(subset=[first], **{'text-align': 'right'})
     try:
         s = s.hide(axis="index")
     except Exception:

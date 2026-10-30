@@ -93,18 +93,26 @@ st.markdown("""
         direction: rtl !important;
     }
     th {
-        text-align: right !important;
+        text-align: center !important;
+        vertical-align: middle !important;
         direction: rtl !important;
         background-color: #1E3A8A !important;
         color: white !important;
-        padding: 10px 12px !important;
+        font-size: 1.08rem !important;
+        white-space: pre-line !important;
+        padding: 12px 12px !important;
         font-family: 'Segoe UI', Tahoma, sans-serif !important;
     }
     td {
-        text-align: right !important;
+        text-align: center !important;
+        vertical-align: middle !important;
         direction: rtl !important;
-        padding: 8px 12px !important;
+        font-size: 1.1rem !important;
+        padding: 10px 12px !important;
         font-family: 'Segoe UI', Tahoma, sans-serif !important;
+    }
+    td:first-child, th:first-child {
+        text-align: right !important;
     }
     .stSelectbox, .stRadio, .stMultiSelect, .stNumberInput, .stFileUploader, .stMarkdown {
         direction: rtl !important;
@@ -178,7 +186,7 @@ def build_styled_table(rows_spec, columns, formula_col=None):
     
     def apply_row_styles(row):
         rt = row_types[row.name]
-        base_rtl = 'direction: rtl; text-align: right; '
+        base_rtl = 'direction: rtl; text-align: right; font-size: 1.08rem; '
         if rt == 'section':
             return [base_rtl + 'background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; font-size: 1.02rem;'] * len(row)
         elif rt == 'subtotal':
@@ -190,7 +198,15 @@ def build_styled_table(rows_spec, columns, formula_col=None):
         else:
             return [base_rtl + 'background-color: #FFFFFF; color: #111827;'] * len(row)
 
-    styler = df.style.apply(apply_row_styles, axis=1)
+    def _center(row):
+        out = apply_row_styles(row)
+        return [out[0]] + [(c.replace('text-align: right;', 'text-align: center; vertical-align: middle;')) for c in out[1:]]
+
+    styler = df.style.apply(_center, axis=1)
+    styler = styler.set_table_styles([
+        {'selector': 'th', 'props': [('text-align', 'center'), ('vertical-align', 'middle'), ('font-size', '1.05rem'), ('white-space', 'pre-line')]},
+        {'selector': 'td', 'props': [('vertical-align', 'middle'), ('padding', '8px 10px')]},
+    ])
     if formula_col and formula_col in df.columns:
         def _fx(col):
             return ['direction: rtl; text-align: right; background-color: #EAF1FF; color: #0B2A6F; font-weight: 600; font-size: 0.86rem; border-right: 3px solid #1E3A8A;' if row_types[i] != 'section' else 'direction: rtl; background-color: #1E3A8A; color: #FFFFFF;' for i in range(len(col))]
@@ -394,11 +410,12 @@ EX_CTX = dict(
 # ==========================================
 # تقسيم شاشات المنصة (8 تبويبات متكاملة)
 # ==========================================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13 = st.tabs([
+tab1, tab2, tab3, tab4, tab_eq, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13 = st.tabs([
     "📈 الملخص التنفيذي",
     "📑 قائمة الدخل التفصيلية",
     "⚖️ قائمة المركز المالي الكاملة",
     "💵 قائمة التدفقات النقدية الكاملة",
+    "🏛️ التغير في حقوق الملكية",
     "📉 المؤشرات المالية الشاملة (KPIs & DuPont)",
     "🏗️ قوائم دخل المشاريع (2021-2026)",
     "📋 موقف الإسناد والتنفيذ والفوترة",
@@ -594,6 +611,54 @@ with tab4:
 
 # ------------------------------------------
 # التبويب الخامس: النسب والمؤشرات المالية الشاملة
+with tab_eq:
+    st.subheader("🏛️ قائمة التغير في حقوق الملكية (2024 – 30 سبتمبر 2026)")
+    CAP, RES = 25000000.0, 8833551.0
+    ret_24_end, ret_25_end = 132148383.0, 164649861.0
+    ret_26_open_adj = 162616261.0          # الأرباح المبقاة بعد التوزيعات في قائمة المركز المالي
+    div_24, div_25, div_26 = 39871858.0, 15000000.0, 2000000.0
+    ret_23_end = ret_24_end - net_24 + div_24            # مشتق بافتراض عدم وجود حركات أخرى
+    oth_25 = ret_25_end - (ret_24_end + net_25 - div_25)  # أرباح شاملة أخرى وتسويات (بالفرق)
+    oth_26 = ret_26_open_adj - (ret_25_end - div_26)      # تسويات أخرى على الرصيد الافتتاحي (بالفرق)
+    ret_26_end = ret_26_open_adj + net_26_a
+    eq_cols = ["البيان", "رأس المال", "الاحتياطي النظامي", "الأرباح المبقاة", "إجمالي حقوق الملكية"]
+    def eq_row(t, label, ret, cap=0.0, res=0.0):
+        return (t, label, [cap, res, ret, cap + res + ret])
+    eq_rows = [
+        ("section", "أولاً: عام 2024", []),
+        ("subtotal", "الرصيد في 1 يناير 2024 (مشتق)", [CAP, RES, ret_23_end, CAP + RES + ret_23_end]),
+        ("item", "صافي ربح السنة", [0, 0, net_24, net_24]),
+        ("item", "توزيعات أرباح مسددة", [0, 0, -div_24, -div_24]),
+        ("subtotal", "الرصيد في 31 ديسمبر 2024", [CAP, RES, ret_24_end, CAP + RES + ret_24_end]),
+        ("section", "ثانياً: عام 2025", []),
+        ("item", "صافي ربح السنة", [0, 0, net_25, net_25]),
+        ("item", "توزيعات أرباح مسددة", [0, 0, -div_25, -div_25]),
+        ("item", "أرباح شاملة أخرى وتسويات (بالفرق)", [0, 0, oth_25, oth_25]),
+        ("subtotal", "الرصيد في 31 ديسمبر 2025", [CAP, RES, ret_25_end, CAP + RES + ret_25_end]),
+        ("section", "ثالثاً: الفترة من 1 يناير إلى 30 سبتمبر 2026 (9 أشهر)", []),
+        ("item", "توزيعات أرباح مسددة", [0, 0, -div_26, -div_26]),
+        ("item", "تسويات أخرى على الأرباح المبقاة (بالفرق)", [0, 0, oth_26, oth_26]),
+        ("item", "صافي ربح الفترة (معدل بالتنفيذ)", [0, 0, net_26_a, net_26_a]),
+        ("total", "الرصيد في 30 سبتمبر 2026", [CAP, RES, ret_26_end, CAP + RES + ret_26_end]),
+    ]
+    st.table(build_styled_table(eq_rows, eq_cols if False else eq_cols))
+    chk = (CAP + RES + ret_26_end) - tot_eq_26_a
+    st.caption(f"مطابقة مع قائمة المركز المالي (إجمالي حقوق الملكية 2026): الفرق = {chk:,.0f}")
+    tot_chg = tot_eq_26_a - (CAP + RES + ret_23_end)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("حقوق الملكية 31 ديسمبر 2024", f"{CAP + RES + ret_24_end:,.0f} ريال")
+    m2.metric("حقوق الملكية 31 ديسمبر 2025", f"{CAP + RES + ret_25_end:,.0f} ريال", f"{(ret_25_end - ret_24_end):+,.0f} عن 2024")
+    m3.metric("حقوق الملكية 30 سبتمبر 2026", f"{tot_eq_26_a:,.0f} ريال", f"{tot_eq_26_a - (CAP + RES + ret_25_end):+,.0f} عن 2025")
+    st.markdown("---")
+    st.markdown("### ملاحظات:")
+    st.markdown(f"""
+    * رأس المال (25 مليون) والاحتياطي النظامي (8.83 مليون) ثابتان طوال الفترة؛ الحركة كلها في الأرباح المبقاة.
+    * الرصيد الافتتاحي لـ 2024 **مشتق** من رصيد نهاية 2024 بعد خصم ربح السنة وإضافة التوزيعات، على افتراض عدم وجود حركات أخرى، ويُستبدل بالرقم المدقق متى توفر.
+    * بند "أرباح شاملة أخرى وتسويات" في 2025 ({oth_25:,.0f}) ناتج بالفرق، ويرجح أنه يخص إعادة قياس التزامات نهاية الخدمة (انخفضت من 26.5 إلى 16.1 مليون)؛ يلزم تأكيده من القوائم المدققة.
+    * في 2026 التوزيعات المسددة 2 مليون من قائمة التدفقات، والتسوية المتبقية ({oth_26:,.0f}) بالفرق بين رصيد الأرباح المبقاة في 2025 والرصيد المعتمد في المركز المالي.
+    * ربح 2026 غير مدقق ويعتمد على إثبات الإيراد حسب التنفيذ، ولم تُحتسب زكاة عن الفترة.
+    """)
+
 # ------------------------------------------
 with tab5:
     ex_sum.render_kpis(EX_CTX, build_styled_table)
