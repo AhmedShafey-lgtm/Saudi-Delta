@@ -83,7 +83,7 @@ st.markdown("""
         direction: rtl !important;
     }
     div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
-        font-size: 1.1rem !important;
+        font-size: 1.8rem !important;
         line-height: 1.4 !important;
         white-space: normal !important;
     }
