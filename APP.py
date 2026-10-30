@@ -164,7 +164,7 @@ def fmt_val(val, r_type='item'):
         return f"({abs(val):,.0f})"
     return f"{val:,.0f}"
 
-def build_styled_table(rows_spec, columns):
+def build_styled_table(rows_spec, columns, formula_col=None):
     formatted_rows = []
     row_types = []
     for r_type, label, vals in rows_spec:
@@ -191,6 +191,10 @@ def build_styled_table(rows_spec, columns):
             return [base_rtl + 'background-color: #FFFFFF; color: #111827;'] * len(row)
 
     styler = df.style.apply(apply_row_styles, axis=1)
+    if formula_col and formula_col in df.columns:
+        def _fx(col):
+            return ['direction: rtl; text-align: right; background-color: #EAF1FF; color: #0B2A6F; font-weight: 600; font-size: 0.86rem; border-right: 3px solid #1E3A8A;' if row_types[i] != 'section' else 'direction: rtl; background-color: #1E3A8A; color: #FFFFFF;' for i in range(len(col))]
+        styler = styler.apply(_fx, subset=[formula_col], axis=0)
     try:
         styler = styler.hide(axis="index")
     except Exception:
@@ -362,6 +366,31 @@ tot_assets_26_a = 155181964.0 + tot_ca_26_a
 tot_eq_26_b = 189212339.0
 tot_eq_26_a = 162616261.0 + 25000000.0 + 8833551.0 + net_26_a
 
+
+# ---- سياق مشترك للملخص التنفيذي وتبويب المؤشرات ----
+import exec_summary as ex_sum
+dso_billed_26 = (53056543.0 / actual_revenue_total_26) * 273.75
+dso_total_26 = ((53056543.0 + accrued_rev_26) / actual_revenue_total_26) * 273.75
+dio_26 = (1285134.0 / tot_cogs_26) * 273.75
+dpo_26 = (1977811.0 / tot_cogs_26) * 273.75
+ccc_26 = dso_total_26 + dio_26 - dpo_26
+EX_CTX = dict(
+    rev_24=rev_24, rev_25=rev_25, rev_26=actual_revenue_total_26,
+    tot_cogs_24=tot_cogs_24, tot_cogs_25=tot_cogs_25, tot_cogs_26=tot_cogs_26,
+    cogs_24=cogs_24, cogs_25=cogs_25, cogs_26=cogs_26,
+    gp_24=gp_24, gp_25=gp_25, gp_26_a=gp_26_a, ga_24=ga_24, ga_25=ga_25, ga_26=ga_26,
+    ebit_24=ebit_24, ebit_25=ebit_25, ebit_26_a=ebit_26_a,
+    ebitda_24=ebitda_24, ebitda_25=ebitda_25, ebitda_26_a=ebitda_26_a,
+    dep_total_24=dep_total_24, dep_total_25=dep_total_25, dep_total_26=dep_total_26,
+    ebt_24=ebt_24, ebt_25=ebt_25, ebt_26_a=ebt_26_a, net_24=net_24, net_25=net_25, net_26_a=net_26_a,
+    fin_24=fin_24, fin_25=fin_25, fin_26=fin_26,
+    tot_ca_26_a=tot_ca_26_a, tot_assets_26_a=tot_assets_26_a, tot_eq_26_a=tot_eq_26_a,
+    accrued_rev_26=accrued_rev_26, deferred_rev_2025=deferred_rev_2025,
+    team_exec_total_26=team_exec_total_26, sub_exec_total_26=sub_exec_total_26,
+    dso_billed_26=dso_billed_26, dso_total_26=dso_total_26, dio_26=dio_26, dpo_26=dpo_26, ccc_26=ccc_26,
+    PAYROLL=PAYROLL_BY_SITE_26, ASSIGN=ASSIGN_2026_BY_SITE,
+)
+
 # ==========================================
 # تقسيم شاشات المنصة (8 تبويبات متكاملة)
 # ==========================================
@@ -385,26 +414,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13
 # التبويب الأول: الملخص التنفيذي
 # ------------------------------------------
 with tab1:
-    st.subheader("🌟 ملخص الأداء المالي والمركز النقدي (حتى 30 سبتمبر 2026)")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("إجمالي الإيراد حسب التنفيذ (شامل المؤجل)", f"{actual_revenue_total_26:,.0f} ريال", f"فجوة الفوترة: +{accrued_rev_26:,.0f}")
-    c2.metric("مجمل الربح التشغيلي", f"{gp_26_a:,.0f} ريال", f"هامش مجمل الربح: {(gp_26_a/actual_revenue_total_26)*100:.1f}%")
-    c3.metric("الربح النقدي (EBITDA)", f"{ebitda_26_a:,.0f} ريال", f"هامش EBITDA: {(ebitda_26_a/actual_revenue_total_26)*100:.1f}%")
-    c4.metric("صافي ربح الفترة", f"{net_26_a:,.0f} ريال", f"هامش صافي الربح: {(net_26_a/actual_revenue_total_26)*100:.1f}%")
-
-    c5, c6, c7, c8 = st.columns(4)
-    c5.metric("تنفيذ فرق الشركة (2026)", f"{team_exec_total_26:,.0f} ريال", "79.4% من الإيراد")
-    c6.metric("تنفيذ مقاولي الباطن (2026)", f"{sub_exec_total_26:,.0f} ريال", "14.0% من الإيراد")
-    c7.metric("إيراد مؤجل مرحل من 2025", f"{deferred_rev_2025:,.0f} ريال", "6.6% من الإيراد")
-    c8.metric("النقد وما في حكمه بنهاية الفترة", "30,649,316 ريال", "التدفق التشغيلي: +19.53 مليون")
-
-    st.markdown("---")
-    st.markdown("### الملاحظات المنهجية وآلية الاحتساب وإعداد التقارير:")
-    st.markdown("""
-    * **قاعدة الإيرادات والفوترة:** يتم إثبات إيرادات عقود الصيانة والعقد الموحد وفقاً للإنتاجية الفعلية ومستخلصات الأعمال المعتمدة من شركة الكهرباء السعودية.
-    * **تكاليف العمالة:** تشمل الرواتب الأساسية، البدلات، التأمين الطبي، حصة الشركة في التأمينات الاجتماعية (GOSI)، مخصصات الإجازات ونهاية الخدمة المحسوبة حسب نظام العمل السعودي (21/30 يوم حسب الأقدمية)، إضافة إلى رسوم الإقامات ورخص العمل (860 ريال شهرياً) وتذاكر السفر (100 ريال شهرياً) للأجانب.
-    * **قراء العدادات:** توقفت أعمال قراء العدادات خلال شهري أغسطس وسبتمبر 2026 بناءً على توجيهات الشركة السعودية للطاقة.
-    """)
+    ex_sum.render_exec_summary(EX_CTX)
 
 # ------------------------------------------
 # التبويب الثاني: قائمة الدخل التفصيلية
@@ -586,84 +596,7 @@ with tab4:
 # التبويب الخامس: النسب والمؤشرات المالية الشاملة
 # ------------------------------------------
 with tab5:
-    st.subheader("📉 منظومة النسب والمؤشرات المالية الشاملة (للإدارة المالية والتنفيذية والملاك والمستثمرين)")
-    
-    ann_factor = 12.0 / 9.0
-    roe_26_ann = ((net_26_a * ann_factor) / tot_eq_26_a) * 100
-    roa_26_ann = ((net_26_a * ann_factor) / tot_assets_26_a) * 100
-    roic_26_ann = ((ebit_26_a * ann_factor) / (tot_eq_26_a + 16518837 - 30649316)) * 100
-    roce_26_ann = ((ebit_26_a * ann_factor) / (tot_assets_26_a - 59000848)) * 100
-    ret_cap_26_ann = ((net_26_a * ann_factor) / 25000000.0) * 100
-
-    asset_turn_26_ann = (actual_revenue_total_26 * ann_factor) / tot_assets_26_a
-    eq_mult_26 = tot_assets_26_a / tot_eq_26_a
-
-    dso_billed_26 = (53056543.0 / actual_revenue_total_26) * 273.75
-    dso_total_26 = ((53056543.0 + accrued_rev_26) / actual_revenue_total_26) * 273.75
-    dio_26 = (1285134.0 / tot_cogs_26) * 273.75
-    dpo_26 = (1977811.0 / tot_cogs_26) * 273.75
-    ccc_26 = dso_total_26 + dio_26 - dpo_26
-
-    kpi_columns = [
-        "المؤشر المالي والتشغيلي", 
-        "2023\n(مدققة)", 
-        "2024\n(مدققة)", 
-        "2025\n(مدققة)", 
-        "30 سبتمبر 2026\n(داخلية معدلة)"
-    ]
-    kpi_rows = [
-        ("section", "أولاً: مؤشرات الربحية والكفاءة التشغيلية (Profitability & Operating Margins)", []),
-        ("pct", "1. هامش مجمل الربح للمشاريع (Gross Profit Margin %)", [15.45, 17.50, 15.89, (gp_26_a/actual_revenue_total_26)*100]),
-        ("pct", "2. هامش الربح النقدي قبل الفوائد والإهلاك والزكاة (EBITDA Margin %)", [17.83, 21.12, 21.04, (ebitda_26_a/actual_revenue_total_26)*100]),
-        ("pct", "3. هامش الربح التشغيلي (Operating Profit Margin - EBIT %)", [12.33, 13.86, 12.51, (ebit_26_a/actual_revenue_total_26)*100]),
-        ("pct", "4. هامش صافي الربح قبل الزكاة (Pre-Zakat Margin - EBT %)", [13.19, 16.67, 13.03, (ebt_26_a/actual_revenue_total_26)*100]),
-        ("pct", "5. هامش صافي الربح النهائي (Net Profit Margin %)", [11.63, 15.24, 11.71, (net_26_a/actual_revenue_total_26)*100]),
-        ("pct", "6. نسبة المصروفات العمومية والإدارية إلى الإيرادات (G&A to Revenue %)", [3.11, 3.64, 3.38, (ga_26/actual_revenue_total_26)*100]),
-        ("mult", "7. معدل تغطية الأرباح التشغيلية لتكاليف التمويل (Interest Coverage Ratio)", [103.90, 78.46, 17.43, ebit_26_a / abs(fin_26)]),
-
-        ("section", "ثانياً: مؤشرات العائد للملاك والمستثمرين وتحليل ديوبونت (Investor Returns & DuPont Analysis)", []),
-        ("pct", "8. العائد السنوي المعادل على حقوق الملكية (Return on Equity - ROE %)", [19.73, 26.52, 17.63, roe_26_ann]),
-        ("pct", "9. العائد السنوي المعادل على إجمالي الأصول (Return on Assets - ROA %)", [11.99, 16.56, 12.06, roa_26_ann]),
-        ("pct", "10. العائد على رأس المال المستثمر التشغيلي (ROIC %)", [31.20, 29.98, 20.94, roic_26_ann]),
-        ("pct", "11. العائد على رأس المال العامل طويل الأجل (ROCE %)", [19.85, 20.80, 17.42, roce_26_ann]),
-        ("pct", "12. العائد السنوي على رأس المال المدفوع (Return on Paid-in Capital - 25M %)", [130.65, 176.04, 139.97, ret_cap_26_ann]),
-        ("pct", "13. [تحليل DuPont - 1] هامش صافي الربح (Net Profit Margin %)", [11.63, 15.24, 11.71, (net_26_a/actual_revenue_total_26)*100]),
-        ("mult", "14. [تحليل DuPont - 2] معدل دوران إجمالي الأصول السنوي (Asset Turnover)", [1.03, 1.09, 1.03, asset_turn_26_ann]),
-        ("mult", "15. [تحليل DuPont - 3] مضاعف حقوق الملكية (Equity Multiplier = Assets/Equity)", [1.65, 1.60, 1.46, eq_mult_26]),
-
-        ("section", "ثالثاً: مؤشرات السيولة وجودة التدفقات النقدية (Liquidity & Cash Flow Quality)", []),
-        ("subtotal", "16. صافي رأس المال العامل (Net Working Capital - ريال سعودي)", [66805303, 47934184, 67749766, tot_ca_26_a - 59000848]),
-        ("mult", "17. نسبة التداول (Current Ratio - مرة) [المعيار الآمن > 1.5x]", [1.81, 1.65, 1.90, tot_ca_26_a / 59000848.0]),
-        ("pct", "18. نسبة التداول كمؤشر مئوي (Current Ratio %)", [180.60, 165.38, 189.68, (tot_ca_26_a / 59000848.0)*100]),
-        ("mult", "19. نسبة السيولة السريعة (Quick Ratio - بدون المخزون والمقدمات)", [1.56, 1.31, 1.59, (tot_ca_26_a - 1285134 - 8757612) / 59000848.0]),
-        ("pct", "20. نسبة النقدية الفورية + الصناديق الاستثمارية إلى الالتزامات المتداولة (%)", [66.40, 64.74, 67.91, ((30649316 + 25142380) / 59000848.0)*100]),
-        ("pct", "21. نسبة تحويل الربح النقدي EBITDA إلى تدفق تشغيلي فعلي (Cash Conversion %)", [148.40, 89.08, 44.12, (19533421.0 / ebitda_26_a)*100]),
-        ("subtotal", "22. التدفق النقدي التشغيلي الحر للملاك (Free Cash Flow قبل الصناديق - ريال)", [42110000, 33460120, 6996764, 19533421 - 24712273 + 5851603]),
-
-        ("section", "رابعاً: مؤشرات الرفع المالي والملاءة الائتمانية (Leverage & Solvency)", []),
-        ("pct", "23. نسبة إجمالي الالتزامات إلى حقوق الملكية (Total Liabilities / Equity %)", [64.59, 60.15, 46.17, (72995112.0 / tot_eq_26_a)*100]),
-        ("pct", "24. نسبة المديونية الشاملة إلى إجمالي الأصول (Total Debt / Assets %)", [39.24, 37.56, 31.59, (72995112.0 / tot_assets_26_a)*100]),
-        ("pct", "25. نسبة القروض البنكية قصيرة الأجل إلى حقوق الملكية (Bank Debt / Equity %)", [0.00, 0.00, 5.39, (16518837.0 / tot_eq_26_a)*100]),
-        ("mult", "26. نسبة القروض البنكية إلى الربح النقدي السنوي (Total Debt / EBITDA)", [0.00, 0.00, 0.17, 16518837.0 / (ebitda_26_a * ann_factor)]),
-        ("subtotal", "27. صافي المركز النقدي فوق القروض البنكية (Net Cash Position - ريال)", [55014728, 32470427, 20457743, 30649316 - 16518837]),
-
-        ("section", "خامساً: مؤشرات كفاءة التحصيل والدورة النقدية (Working Capital & Collection Days)", []),
-        ("days", "28. متوسط فترة تحصيل الذمم المفوترة فقط (Billed DSO - يوم)", [82, 77, 107, dso_billed_26]),
-        ("days", "29. متوسط فترة التحصيل الشاملة مع الإيرادات المستحقة (Total DSO incl. WIP - يوم)", [82, 77, 107, dso_total_26]),
-        ("days", "30. متوسط فترة الاحتفاظ بالمخزون (Inventory Days - DIO)", [2, 2, 2, dio_26]),
-        ("days", "31. متوسط فترة سداد الموردين ومقاولي الباطن (Payables Days - DPO)", [3, 5, 4, dpo_26]),
-        ("total", "32. دورة التحول النقدي الشاملة (Cash Conversion Cycle - يوم)", [int(round(81)), int(round(74)), int(round(104)), int(round(ccc_26))]),
-
-        ("section", "سادساً: مؤشرات هيكل تكلفة المشاريع منسوبة للإيرادات (Cost Structure Ratios %)", []),
-        ("pct", "33. نسبة الرواتب والأجور وملحقاتها إلى الإيرادات (%)", [47.20, 47.34, 47.21, (cogs_26[0]/actual_revenue_total_26)*100]),
-        ("pct", "34. نسبة تكلفة مقاولي الباطن والمواد المباشرة إلى الإيرادات (%)", [13.80, 11.41, 11.25, ((cogs_26[2]+cogs_26[3])/actual_revenue_total_26)*100]),
-        ("pct", "35. نسبة صيانة وتشغيل وإهلاك الأسطول والمعدات إلى الإيرادات (%)", [11.50, 14.94, 17.55, ((cogs_26[1]+cogs_26[5])/actual_revenue_total_26)*100])
-    ]
-    st.table(build_styled_table(kpi_rows, kpi_columns))
-
-    st.markdown("---")
-    st.markdown("### ملاحظات منهجية المؤشرات:")
-    st.markdown("تم سنوية العوائد لعام 2026 (× 12 ÷ 9) لتوحيد أساس المقارنة مع السنوات المالية الكاملة السابقة.")
+    ex_sum.render_kpis(EX_CTX, build_styled_table)
 
 # ------------------------------------------
 # التبويب السادس: قوائم دخل المشاريع (2021 - 2026)
