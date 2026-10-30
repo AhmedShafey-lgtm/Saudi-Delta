@@ -15,9 +15,9 @@ PRO = 9.0 / 12.0          # حصة 9 أشهر من السنة الكاملة
 FX_CSS = """
 <style>
     .fx {
-        direction: rtl; text-align: right; font-size: 0.80rem; line-height: 1.35;
+        direction: rtl; text-align: right; font-size: 1.0rem; line-height: 1.5;
         color: #0B2A6F; background: #EAF1FF; border-right: 3px solid #1E3A8A;
-        padding: 3px 8px; margin: -6px 0 10px 0; border-radius: 4px; font-weight: 600;
+        padding: 5px 10px; margin: -4px 0 14px 0; border-radius: 4px; font-weight: 600;
     }
     .sect-title {
         direction: rtl; text-align: right; background: linear-gradient(90deg, #1E3A8A, #3B5FC4);

@@ -14,6 +14,10 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import io
+import importlib
+import exec_summary, zakat_calc
+importlib.reload(exec_summary)
+importlib.reload(zakat_calc)
 
 # إعدادات الصفحة الرئيسية
 st.set_page_config(
@@ -72,14 +76,23 @@ st.markdown("""
         direction: rtl !important;
     }
     div[data-testid="stMetricValue"] {
-        font-size: 1.32rem;
+        font-size: 1.6rem;
         font-weight: bold;
         color: #1E3A8A;
         text-align: right !important;
         direction: rtl !important;
     }
+    div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
+        font-size: 1.1rem !important;
+        line-height: 1.4 !important;
+        white-space: normal !important;
+    }
+    div[data-testid="stMetricDelta"], div[data-testid="stMetricDelta"] * {
+        font-size: 1.0rem !important;
+        white-space: normal !important;
+    }
     div[data-testid="stMetricLabel"], div[data-testid="stMetricDelta"] {
-        font-size: 0.90rem;
+        font-size: 1.0rem;
         font-weight: 600;
         text-align: right !important;
         direction: rtl !important;
@@ -413,7 +426,7 @@ dta_26 = 309330.0 + ZK_DTA
 
 
 # ---- سياق مشترك للملخص التنفيذي وتبويب المؤشرات ----
-import exec_summary as ex_sum
+ex_sum = exec_summary
 dso_billed_26 = (53056543.0 / actual_revenue_total_26) * 273.75
 dso_total_26 = ((53056543.0 + accrued_rev_26) / actual_revenue_total_26) * 273.75
 dio_26 = (1285134.0 / tot_cogs_26) * 273.75
@@ -693,7 +706,6 @@ with tab_eq:
 
 # ------------------------------------------
 with tab_zk:
-    import zakat_calc
     zakat_calc.render_zakat(EX_CTX, build_styled_table)
 
 # ------------------------------------------
