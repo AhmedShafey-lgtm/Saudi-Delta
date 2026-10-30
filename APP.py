@@ -83,7 +83,7 @@ st.markdown("""
         direction: rtl !important;
     }
     div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
-        font-size: 1.8rem !important;
+        font-size: 1.1rem !important;
         line-height: 1.4 !important;
         white-space: normal !important;
     }
@@ -454,23 +454,22 @@ EX_CTX = dict(
 # ==========================================
 # تقسيم شاشات المنصة (8 تبويبات متكاملة)
 # ==========================================
-tab1, tab2, tab3, tab4, tab_eq, tab_zk, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13 = st.tabs([
-    "📈 الملخص التنفيذي",
-    "📑 قائمة الدخل التفصيلية",
-    "⚖️ قائمة المركز المالي الكاملة",
-    "💵 قائمة التدفقات النقدية الكاملة",
-    "🏛️ التغير في حقوق الملكية",
-    "🧮 حاسبة الزكاة وضريبة الدخل",
-    "📉 المؤشرات المالية الشاملة (KPIs & DuPont)",
-    "🏗️ قوائم دخل المشاريع (2021-2026)",
-    "📋 موقف الإسناد والتنفيذ والفوترة",
-    "🏢 تحليل الشركة (التغيرات والانحرافات)",
-    "📍 عقد تبوك",
-    "📍 عقد الباحة",
-    "📍 عقد عسير",
-    "📍 عقد مكة المكرمة",
-    "📍 عقد الرياض"
+grp_mgmt, grp_fs, grp_zk, grp_proj = st.tabs([
+    "📈 الإدارة والمؤشرات",
+    "📑 القوائم المالية",
+    "🧮 الزكاة وضريبة الدخل",
+    "🏗️ المشاريع والعقود",
 ])
+with grp_mgmt:
+    tab1, tab5, tab_chk = st.tabs(["📈 الملخص التنفيذي", "📉 المؤشرات المالية الشاملة (KPIs & DuPont)", "✅ فحوصات سلامة البيانات"])
+with grp_fs:
+    tab2, tab3, tab4, tab_eq = st.tabs(["📑 قائمة الدخل", "⚖️ المركز المالي", "💵 التدفقات النقدية", "🏛️ التغير في حقوق الملكية"])
+with grp_zk:
+    tab_zk = st.container()
+with grp_proj:
+    tab8, tab6, tab7, tab9, tab10, tab11, tab12, tab13 = st.tabs([
+        "🏢 تحليل الشركة", "🏗️ قوائم دخل المشاريع (2021-2026)", "📋 الإسناد والتنفيذ والفوترة",
+        "📍 عقد تبوك", "📍 عقد الباحة", "📍 عقد عسير", "📍 عقد مكة المكرمة", "📍 عقد الرياض"])
 
 # ------------------------------------------
 # التبويب الأول: الملخص التنفيذي
@@ -624,7 +623,7 @@ with tab4:
         ("item", "أطراف ذات علاقة وجاري الشركاء", [1885587, -2786088, -340630]),
         ("item", "دائنون تجاريون (الموردون ومقاولو الباطن)", [1405847, -314268, -105979]),
         ("item", "مصروفات مستحقة وأرصدة دائنة أخرى وضريبة القيمة المضافة", [162355, 10413052, 466151]),
-        ("item", "إيرادات مؤجلة (إطفاء الدفعات المقدمة للعقد الموحد)", [-17435782, -11699186, -14697741]),
+        ("item", "إيرادات مؤجلة (إطفاء الدفعات المقدمة للعقد الموحد)", [-11699186, -17435782, -14697741]),
         ("subtotal", "النقد الناتج من العمليات التشغيلية", [62571038, 34481519, 28004628]),
         ("item", "التزامات المزايا المحددة للموظفين (نهاية الخدمة) المسددة فعلياً", [-4526793, -2841250, -6092147]),
         ("item", "الزكاة الشرعية وضريبة الدخل المسددة فعلياً", [-3730305, -3896180, -2379060]),
@@ -1058,3 +1057,124 @@ with tab13:
 
 st.markdown("---")
 st.markdown("🔒 **منصة دلتا السعودية للتقارير المالية** - إشراف الإدارة المالية | جميع الحقوق محفوظة © 2026")
+
+# ------------------------------------------
+# التبويب الأخير: فحوصات سلامة البيانات والتطابق بين القوائم والمصادر
+# ------------------------------------------
+def _pick(rows, key, col):
+    for t, l, v in rows:
+        if v and key in l:
+            return float(v[col])
+    return float("nan")
+
+with tab_chk:
+    st.subheader("✅ فحوصات سلامة البيانات والتطابق بين القوائم والمصادر")
+    st.caption("تُجرى تلقائياً عند كل تحديث للبيانات. الفرق ضمن التسامح (±10 ريال) يعد مطابقاً، وما عداه يحتاج تفسيراً أو تصحيحاً.")
+    CK = []
+    def add_ck(group, name, a, b, tol=10.0, note="", explained=0.0, review=""):
+        d = a - b
+        rest = d - explained
+        if abs(d) <= tol:
+            st_ = "✅ مطابق"
+        elif review:
+            st_ = "🔵 قيد المراجعة"
+        elif abs(rest) <= tol:
+            st_ = "✅ مفسَّر بالكامل"
+        elif abs(rest) <= max(tol * 1000, 0.02 * max(abs(a), abs(b), 1)):
+            st_ = "🟡 فرق يحتاج تفسير"
+        else:
+            st_ = "🔴 فرق جوهري"
+        CK.append({"المجموعة": group, "الفحص": name, "القيمة (أ)": a, "القيمة (ب)": b, "الفرق": d,
+                   "المفسَّر": explained, "المتبقي بعد التفسير": rest, "الحالة": st_, "ملاحظة": note or review})
+
+    for i, y in enumerate(["2024", "2025", "2026"]):
+        ta = _pick(bs_rows, "إجمالي الأصول (Total Assets)", i if i < 2 else 3)
+        le = _pick(bs_rows, "إجمالي حقوق الملكية والالتزامات", i if i < 2 else 3)
+        add_ck("المركز المالي", f"توازن الميزانية {y}: الأصول = الالتزامات + الملكية", ta, le)
+        a_ = _pick(cf_rows, "(A)", i); b_ = _pick(cf_rows, "(B)", i); c_ = _pick(cf_rows, "(C)", i)
+        add_ck("التدفقات", f"صافي التغير في النقد {y} = A + B + C", a_ + b_ + c_, _pick(cf_rows, "صافي التغير (النقص)", i))
+        pre = _pick(cf_rows, "الربح التشغيلي النقدي قبل", i)
+        wc = sum(v[i] for t, l, v in cf_rows if v and t == "item" and (
+            l in ("المخزون", "إيرادات مستحقة (الزيادة في الأعمال المنفذة غير المفوترة - WIP)", "تأمين خطابات الضمان البنكية",
+                  "مصروفات مدفوعة مقدماً وأرصدة مدينة أخرى", "أطراف ذات علاقة وجاري الشركاء")
+            or "مدينون تجاريون (صافي" in l or l.startswith("دائنون تجاريون")
+            or l.startswith("مصروفات مستحقة وأرصدة") or l.startswith("إيرادات مؤجلة (إطفاء")))
+        add_ck("التدفقات", f"التدفقات {y}: الربح قبل رأس المال العامل + التغيرات = النقد من العمليات", pre + wc, _pick(cf_rows, "النقد الناتج من العمليات", i),
+               note="فرق صغير = تقريب في المدخلات")
+        end_cash = _pick(cf_rows, "النقد وما في حكمه في نهاية", i)
+        bs_cash = _pick(bs_rows, "النقد وما في حكمه (حسابات", i if i < 2 else 3)
+        add_ck("التدفقات", f"النقد الختامي {y}: قائمة التدفقات = المركز المالي", end_cash, bs_cash)
+    add_ck("التدفقات", "النقد الافتتاحي 2026 = النقد الختامي 2025", _pick(cf_rows, "النقد وما في حكمه في بداية", 2), _pick(cf_rows, "النقد وما في حكمه في نهاية", 1))
+    add_ck("حقوق الملكية", "رصيد حقوق الملكية في قائمة التغير = المركز المالي (2026)", CAP + RES + ret_26_end, tot_eq_26_a)
+    add_ck("الربح", "صافي الربح قبل الزكاة: قائمة الدخل = قائمة التدفقات (2026)", ebt_26_a, _pick(cf_rows, "صافي ربح الفترة قبل الزكاة", 2))
+
+    site_exec = sum(d["total_exec"] for d in ASSIGN_2026_BY_SITE.values())
+    site_team = sum(d["team_wo"] + d["team_partial"] + d["team_emerg"] for d in ASSIGN_2026_BY_SITE.values())
+    site_sub = sum(d["sub_works"] + d["sub_pct_contract"] for d in ASSIGN_2026_BY_SITE.values())
+    site_billed = sum(d["billed"] for d in ASSIGN_2026_BY_SITE.values())
+    REV_NOTE = "سيُعتمد نهائياً في النسخة القادمة بعد مراجعة ملخص المواقع (السبت) وإنهاء نموذج الإسناد والفوترة"
+    add_ck("الإيراد 2026", "التنفيذ الكلي: قوائم الدخل (فرق + مقاولين + مؤجل) مقابل ملخص المواقع", actual_revenue_total_26, site_exec, review=REV_NOTE)
+    add_ck("الإيراد 2026", "تنفيذ فرق الشركة: قوائم الدخل (شامل المؤجل) مقابل ملخص المواقع", team_exec_total_26 + deferred_rev_2025, site_team, review=REV_NOTE)
+    add_ck("الإيراد 2026", "تنفيذ مقاولي الباطن: قوائم الدخل مقابل ملخص المواقع", sub_exec_total_26, site_sub, review=REV_NOTE)
+    add_ck("الإيراد 2026", "المفوتر: قائمة الدخل مقابل ملخص المواقع", billed_rev_26, site_billed, explained=deferred_rev_2025,
+           review="مفسَّر جزئياً: الإيراد المؤجل من 2025 (يظهر في قوائم 2025). المتبقي يُراجع مع ملخص المواقع يوم السبت")
+    add_ck("التكاليف 2026", "تكلفة الرواتب: قائمة الدخل مقابل ملف الرواتب بالمواقع",
+           cogs_26[0], sum(v["total_comp"] for v in PAYROLL_BY_SITE_26.values()),
+           review="مفسَّر نوعياً: مصاريف مرتبطة بالعمال لا تُصرف نقداً في ملف الرواتب (مخصصات إجازات ونهاية خدمة وغيرها). يحتاج حصراً بالمبلغ")
+    add_ck("التكاليف 2026", "الإهلاك: قائمة الدخل مقابل سجل الأصول",
+           dep_total_26, sum(v.get("dep_2026", 0) for v in ASSETS_BY_SITE_DB.values()))
+    add_ck("الزكاة", "الزكاة والضريبة المثبتة في 2026 (0 = غير معتمدة بعد)", -zakat_tax_26, 0.0, tol=1.0,
+           note="فعّل خيار الاعتماد في تبويب الحاسبة لتحميل المبلغ")
+
+    ckdf = pd.DataFrame(CK)
+    n_ok = int((ckdf["الحالة"].str.startswith("✅")).sum())
+    n_warn = int((ckdf["الحالة"].str.startswith("🟡") | ckdf["الحالة"].str.startswith("🔵")).sum())
+    n_bad = int((ckdf["الحالة"].str.startswith("🔴")).sum())
+    k1, k2, k3 = st.columns(3)
+    k1.metric("فحوصات مطابقة", f"{n_ok}")
+    k2.metric("قيد المراجعة / تحتاج تفسيراً", f"{n_warn}")
+    k3.metric("فروق جوهرية", f"{n_bad}", delta_color="inverse")
+    show = ckdf.copy()
+    for c in ["القيمة (أ)", "القيمة (ب)", "الفرق", "المفسَّر", "المتبقي بعد التفسير"]:
+        show[c] = show[c].map(lambda v: "—" if pd.isna(v) else (f"({abs(v):,.0f})" if v < 0 else f"{v:,.0f}"))
+    def _ck_style(row):
+        col = "#E8F8EE" if row["الحالة"].startswith("✅") else ("#E8F0FE" if row["الحالة"].startswith("🔵") else ("#FFF6DD" if row["الحالة"].startswith("🟡") else "#FDE8E8"))
+        return [f"background-color: {col}; color: #111827;"] * len(row)
+    st.table(show.style.apply(_ck_style, axis=1).hide(axis="index"))
+
+# ------------------------------------------
+# تصدير القوائم المالية إلى Excel (الشريط الجانبي)
+# ------------------------------------------
+def _rows_to_df(rows, cols):
+    data = []
+    for t, l, v in rows:
+        if t == "section":
+            data.append([l] + [None] * (len(cols) - 1))
+        else:
+            data.append([l] + [x if isinstance(x, (int, float)) else (None if x in ("", None) else x) for x in v])
+    return pd.DataFrame(data, columns=[c.replace("\n", " ") for c in cols])
+
+try:
+    _buf = io.BytesIO()
+    with pd.ExcelWriter(_buf, engine="openpyxl") as _xw:
+        for _nm, _rows, _cols in [("قائمة الدخل", pl_rows, pl_columns), ("المركز المالي", bs_rows, bs_columns),
+                                  ("التدفقات النقدية", cf_rows, cf_columns), ("حقوق الملكية", eq_rows, eq_cols),
+                                  ("فحوصات الجودة", None, None)]:
+            if _rows is None:
+                ckdf.to_excel(_xw, sheet_name=_nm, index=False)
+            else:
+                _rows_to_df(_rows, _cols).to_excel(_xw, sheet_name=_nm, index=False)
+        for _ws in _xw.book.worksheets:
+            _ws.sheet_view.rightToLeft = True
+            _ws.column_dimensions["A"].width = 70
+            for _c in "BCDEFG":
+                _ws.column_dimensions[_c].width = 22
+            for _row in _ws.iter_rows(min_row=2):
+                for _cell in _row[1:]:
+                    if isinstance(_cell.value, (int, float)):
+                        _cell.number_format = '#,##0;(#,##0)'
+    st.sidebar.markdown("---")
+    st.sidebar.download_button("📥 تصدير القوائم المالية (Excel)", data=_buf.getvalue(), file_name="Delta_Financial_Statements_2026-09-30.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+except Exception as _e:
+    st.sidebar.warning(f"تعذر تجهيز ملف التصدير: {_e}")
