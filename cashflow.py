@@ -23,6 +23,7 @@ DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_l
 REF_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_refs.csv")
 RULES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_rules.json")
 ADV_AMT = 581348.66
+DEFAULT_OPEN = 31071365.31  # مجموع الحسابات البنكية 1-01-01 في ميزان 31/12/2025 (الصناديق والعهد 91,179 مستبعدة)
 BANK_PREFIX = "10101"
 ADMIN_UNITS = {"ادارة المشاريع"}
 UNCLASS_IN, UNCLASS_OUT = "متحصلات أخرى غير مصنفة", "مدفوعات أخرى غير مصنفة"
@@ -572,7 +573,7 @@ def _load_arules():
 def _save_rules(a, d, v=None):
     try:
         v = v if v is not None else st.session_state.get("cf_vrules", _load_vrules())
-        json.dump({"acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist(), "open": float(st.session_state.get("cf_open", 0.0)), "act": st.session_state.get("cf_arules", _load_arules()).values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump({"acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist(), "open": float(st.session_state.get("cf_open", DEFAULT_OPEN)), "act": st.session_state.get("cf_arules", _load_arules()).values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
     except Exception:
         pass
 
@@ -587,9 +588,9 @@ def _state():
         ss["cf_refs"] = _load_refs()
     if "cf_open" not in ss:
         try:
-            ss["cf_open"] = float(json.load(open(RULES_FILE, encoding="utf-8")).get("open", 0.0)) if os.path.exists(RULES_FILE) else 0.0
+            ss["cf_open"] = float(json.load(open(RULES_FILE, encoding="utf-8")).get("open", DEFAULT_OPEN)) if os.path.exists(RULES_FILE) else DEFAULT_OPEN
         except Exception:
-            ss["cf_open"] = 0.0
+            ss["cf_open"] = DEFAULT_OPEN
     if "cf_arules" not in ss:
         ss["cf_arules"] = _load_arules()
     if "cf_vrules" not in ss:
@@ -773,7 +774,7 @@ def render_cashflow(ctx, build_styled_table):
     t_cus = block("تحويلات العهد (إنفاق لاحق من الصناديق)", {"ع"}, rows)
     net = op + t_inv + t_fin + t_cus
     rows.append(("total", "صافي التغير في أرصدة البنوك", list(net) + [float(net.sum())]))
-    _open0 = float(st.session_state.get("cf_open", 0.0))
+    _open0 = float(st.session_state.get("cf_open", DEFAULT_OPEN))
     _prior = float(C_all[C_all["الشهر"] < min(cols)]["الأثر النقدي"].sum()) if cols else 0.0
     _o, _cl = [], []
     _run = _open0 + _prior
@@ -790,9 +791,9 @@ def render_cashflow(ctx, build_styled_table):
                 f'عدّل قواعد التصنيف أسفل الصفحة ليتناقص، ويُطبَّق التعديل على كل الأشهر تلقائياً.</div>', unsafe_allow_html=True)
 
     oc1, oc2 = st.columns(2)
-    _ov = oc1.number_input("رصيد البنوك الافتتاحي في 1/1/2026 (مجموع الحسابات البنكية بدون العهد)", value=float(st.session_state.get("cf_open", 0.0)),
+    _ov = oc1.number_input("رصيد البنوك الافتتاحي في 1/1/2026 (مجموع الحسابات البنكية بدون العهد)", value=float(st.session_state.get("cf_open", DEFAULT_OPEN)),
                            step=1000.0, format="%.2f", key="cf_open_in", disabled=not unlocked)
-    if unlocked and _ov != st.session_state.get("cf_open", 0.0):
+    if unlocked and _ov != st.session_state.get("cf_open", DEFAULT_OPEN):
         st.session_state["cf_open"] = float(_ov)
         _save_rules(rules[0], rules[1])
     try:
