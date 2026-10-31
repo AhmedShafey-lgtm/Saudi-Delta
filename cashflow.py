@@ -572,7 +572,7 @@ def _load_arules():
 def _save_rules(a, d, v=None):
     try:
         v = v if v is not None else st.session_state.get("cf_vrules", _load_vrules())
-        json.dump({"acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist(), "act": st.session_state.get("cf_arules", _load_arules()).values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump({"acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist(), "open": float(st.session_state.get("cf_open", 0.0)), "act": st.session_state.get("cf_arules", _load_arules()).values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
     except Exception:
         pass
 
@@ -585,6 +585,11 @@ def _state():
         ss["cf_rules"] = _load_rules()
     if "cf_refs" not in ss:
         ss["cf_refs"] = _load_refs()
+    if "cf_open" not in ss:
+        try:
+            ss["cf_open"] = float(json.load(open(RULES_FILE, encoding="utf-8")).get("open", 0.0)) if os.path.exists(RULES_FILE) else 0.0
+        except Exception:
+            ss["cf_open"] = 0.0
     if "cf_arules" not in ss:
         ss["cf_arules"] = _load_arules()
     if "cf_vrules" not in ss:
@@ -648,7 +653,7 @@ def render_cashflow(ctx, build_styled_table):
                 'فتُستبعد تلقائياً التحويلات بين الحسابات البنكية. ارفع تقرير كل شهر ليُضاف، وإعادة رفع شهر تستبدله. '
                 'يُحفظ في ملف cashflow_lines.csv بجوار التطبيق (قد يضيع على الاستضافة المؤقتة فاحتفظ بنسخة).</div>', unsafe_allow_html=True)
 
-    up = st.file_uploader("رفع تقرير المعاملات التفصيلي لشهر (Excel)، ويمكن رفع عدة ملفات", type=["xlsx"], accept_multiple_files=True,
+    up = st.file_uploader("رفع تقرير المعاملات التفصيلي لشهر (Excel)، ويمكن رفع عدة ملفات", type=["xlsx", "csv"], accept_multiple_files=True,
                           key="cf_up", disabled=not unlocked)
     if not unlocked:
         st.info("🔒 الرفع وتعديل قواعد التصنيف مقفلان. أدخل كلمة السر في الشريط الجانبي.")
@@ -660,8 +665,13 @@ def render_cashflow(ctx, build_styled_table):
             if h in done:
                 continue
             try:
-                df = parse_report(raw)
-                res, info = bank_effects(df)
+                if f.name.lower().endswith(".csv"):
+                    res = pd.read_csv(io.BytesIO(raw), encoding="utf-8-sig", dtype={"كود الحساب": str, "القيد": str}).fillna("")[LINE_COLS]
+                    res["الأثر النقدي"] = pd.to_numeric(res["الأثر النقدي"], errors="coerce").fillna(0.0)
+                    info = {"entries": 0, "internal": 0.0, "bank_net": float(res["الأثر النقدي"].sum())}
+                else:
+                    df = parse_report(raw)
+                    res, info = bank_effects(df)
                 months = set(res["الشهر"].unique())
                 keep = st.session_state["cf_lines"]
                 keep = keep[~keep["الشهر"].isin(months)]
@@ -669,7 +679,7 @@ def render_cashflow(ctx, build_styled_table):
                 st.session_state["cf_info"][f.name] = info
                 _save_lines(st.session_state["cf_lines"])
                 done.add(h)
-                st.success(f"{f.name}: {info['entries']} قيداً بنكياً، {len(res)} سطراً مقابلاً، تحويلات داخلية مستبعدة {info['internal']:,.0f}، صافي حركة البنوك {info['bank_net']:,.0f}.")
+                st.success(f"{f.name}: الأشهر {', '.join(sorted(months))}، {info['entries']} قيداً بنكياً، {len(res)} سطراً مقابلاً، تحويلات داخلية مستبعدة {info['internal']:,.0f}، صافي حركة البنوك {info['bank_net']:,.0f}.")
             except Exception as e:
                 st.error(f"تعذرت قراءة {f.name}: {e}")
         lines = st.session_state["cf_lines"]
@@ -697,6 +707,24 @@ def render_cashflow(ctx, build_styled_table):
     if len(_rf):
         st.caption("المراجع المحمّلة: عملاء %d حركة، موردون %d حركة، أنشطة %d مورداً." % ((_rf["النوع"] == "عميل").sum(), (_rf["النوع"] == "مورد").sum(), (_rf["النوع"] == "نشاط").sum()))
 
+    if len(st.session_state["cf_lines"]):
+        _L = st.session_state["cf_lines"].copy()
+        _L["الأثر النقدي"] = pd.to_numeric(_L["الأثر النقدي"], errors="coerce").fillna(0.0)
+        _g = _L.groupby("الشهر")["الأثر النقدي"].agg(["count", "sum"]).reset_index()
+        st.caption("الأشهر المحمّلة حالياً: " + " | ".join(f"{r['الشهر']} ({int(r['count'])} سطراً، صافي {r['sum']:,.0f})" for _, r in _g.iterrows()))
+        _c1, _c2 = st.columns(2)
+        _c1.download_button("⬇️ نسخة احتياطية من البيانات المحمّلة (CSV)", data=_L.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                            file_name="cashflow_lines_backup.csv", mime="text/csv", key="cf_bk")
+        if unlocked:
+            _dm = _c2.multiselect("حذف شهر محمّل", _g["الشهر"].tolist(), key="cf_delm")
+            if _dm and _c2.button("حذف الأشهر المحددة", key="cf_delb"):
+                _k = st.session_state["cf_lines"]
+                st.session_state["cf_lines"] = _k[~_k["الشهر"].isin(_dm)].reset_index(drop=True)
+                st.session_state["cf_hashes"] = set()
+                _save_lines(st.session_state["cf_lines"])
+                st.rerun()
+
+    lines = st.session_state["cf_lines"]
     if len(lines) == 0:
         st.markdown('<div class="cf-note">لا توجد بيانات بعد. ارفع تقرير المعاملات التفصيلي لشهر واحد على الأقل.</div>', unsafe_allow_html=True)
         _rules_editor(rules, unlocked)
@@ -704,9 +732,10 @@ def render_cashflow(ctx, build_styled_table):
 
     C = classified()
     months_all = sorted(C["الشهر"].unique().tolist())
-    sel = st.multiselect("الأشهر المعروضة", months_all, default=months_all, key="cf_months")
+    sel = st.multiselect("الأشهر المعروضة", months_all, default=months_all, key="cf_months_" + "_".join(months_all))
     if not sel:
         sel = months_all
+    C_all = C
     C = C[C["الشهر"].isin(sel)]
 
     # ---------- المصفوفة الشهرية ----------
@@ -744,11 +773,40 @@ def render_cashflow(ctx, build_styled_table):
     t_cus = block("تحويلات العهد (إنفاق لاحق من الصناديق)", {"ع"}, rows)
     net = op + t_inv + t_fin + t_cus
     rows.append(("total", "صافي التغير في أرصدة البنوك", list(net) + [float(net.sum())]))
+    _open0 = float(st.session_state.get("cf_open", 0.0))
+    _prior = float(C_all[C_all["الشهر"] < min(cols)]["الأثر النقدي"].sum()) if cols else 0.0
+    _o, _cl = [], []
+    _run = _open0 + _prior
+    for v in net:
+        _o.append(_run)
+        _run += float(v)
+        _cl.append(_run)
+    rows.append(("item", "رصيد البنوك أول الشهر", _o + [_o[0] if _o else 0.0]))
+    rows.append(("total", "رصيد البنوك آخر الشهر", _cl + [_cl[-1] if _cl else 0.0]))
     st.table(build_styled_table(rows, ["البند"] + cols + ["الإجمالي"]))
     un = C[C["البند"].isin([UNCLASS_IN, UNCLASS_OUT])]["الأثر النقدي"].abs().sum()
     tot_abs = C["الأثر النقدي"].abs().sum()
     st.markdown(f'<div class="cf-fx">غير المصنف {un:,.0f} ريال ({(un / tot_abs * 100 if tot_abs else 0):.1f}% من إجمالي الحركة). '
                 f'عدّل قواعد التصنيف أسفل الصفحة ليتناقص، ويُطبَّق التعديل على كل الأشهر تلقائياً.</div>', unsafe_allow_html=True)
+
+    oc1, oc2 = st.columns(2)
+    _ov = oc1.number_input("رصيد البنوك الافتتاحي في 1/1/2026 (مجموع الحسابات البنكية بدون العهد)", value=float(st.session_state.get("cf_open", 0.0)),
+                           step=1000.0, format="%.2f", key="cf_open_in", disabled=not unlocked)
+    if unlocked and _ov != st.session_state.get("cf_open", 0.0):
+        st.session_state["cf_open"] = float(_ov)
+        _save_rules(rules[0], rules[1])
+    try:
+        import banks as _bk
+        _tb = float(_bk.summary()["bal_banks"])
+        _m9 = [m for m in months_all if m <= "2026-09"]
+        _full = len(_m9) == 9
+        _flows = float(C_all[C_all["الشهر"].isin(_m9)]["الأثر النقدي"].sum())
+        if _full:
+            oc2.markdown(f'<div class="cf-fx">الرصيد الافتتاحي المستنتج = رصيد البنوك في ميزان 30/9 ({_tb:,.0f}) − صافي تدفقات يناير–سبتمبر ({_flows:,.0f}) = {_tb - _flows:,.0f}. قارنه برصيد 31/12/2025 الفعلي.</div>', unsafe_allow_html=True)
+        else:
+            oc2.caption(f"عند تحميل الأشهر من يناير حتى سبتمبر (الآن {len(_m9)} من 9) يظهر الرصيد الافتتاحي المستنتج للمقارنة مع ميزان 30/9 ({_tb:,.0f}).")
+    except Exception:
+        pass
 
     mo = pd.DataFrame({"الشهر": cols, "المتحصلات": [float(C[(C["الشهر"] == m) & (C["الأثر النقدي"] > 0)]["الأثر النقدي"].sum()) for m in cols],
                        "المدفوعات": [float(C[(C["الشهر"] == m) & (C["الأثر النقدي"] < 0)]["الأثر النقدي"].sum()) for m in cols]})
