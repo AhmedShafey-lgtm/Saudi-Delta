@@ -15,9 +15,10 @@ import numpy as np
 import plotly.express as px
 import io
 import importlib
-import exec_summary, zakat_calc
+import exec_summary, zakat_calc, banks
 importlib.reload(exec_summary)
 importlib.reload(zakat_calc)
+importlib.reload(banks)
 
 # إعدادات الصفحة الرئيسية
 st.set_page_config(
@@ -449,15 +450,17 @@ EX_CTX = dict(
     PAYROLL=PAYROLL_BY_SITE_26, ASSIGN=ASSIGN_2026_BY_SITE,
     cl_26=cl_26, liab_26=liab_26, dta_26=dta_26, ZK_CUR=ZK_CUR, ZK_DTA=ZK_DTA,
     zakat_tax_24=zakat_tax_24, zakat_tax_25=zakat_tax_25, zakat_tax_26=zakat_tax_26,
+    UP_UNLOCKED=UP_UNLOCKED, bs_cash_26=30649316.0, bs_loans_26=16518837.0, bs_guar_margin_26=9550682.0,
 )
 
 # ==========================================
 # تقسيم شاشات المنصة (8 تبويبات متكاملة)
 # ==========================================
-grp_mgmt, grp_fs, grp_zk, grp_proj = st.tabs([
+grp_mgmt, grp_fs, grp_zk, grp_bank, grp_proj = st.tabs([
     "📈 الإدارة والمؤشرات",
     "📑 القوائم المالية",
     "🧮 الزكاة وضريبة الدخل",
+    "🏦 البنوك",
     "🏗️ المشاريع والعقود",
 ])
 with grp_mgmt:
@@ -466,6 +469,8 @@ with grp_fs:
     tab2, tab3, tab4, tab_eq = st.tabs(["📑 قائمة الدخل", "⚖️ المركز المالي", "💵 التدفقات النقدية", "🏛️ التغير في حقوق الملكية"])
 with grp_zk:
     tab_zk = st.container()
+with grp_bank:
+    tab_bank = st.container()
 with grp_proj:
     tab8, tab6, tab7, tab9, tab10, tab11, tab12, tab13 = st.tabs([
         "🏢 تحليل الشركة", "🏗️ قوائم دخل المشاريع (2021-2026)", "📋 الإسناد والتنفيذ والفوترة",
@@ -706,6 +711,10 @@ with tab_eq:
 # ------------------------------------------
 with tab_zk:
     zakat_calc.render_zakat(EX_CTX, build_styled_table)
+
+# ------------------------------------------
+with tab_bank:
+    banks.render_banks(EX_CTX, build_styled_table)
 
 # ------------------------------------------
 with tab5:
@@ -1125,6 +1134,17 @@ with tab_chk:
            dep_total_26, sum(v.get("dep_2026", 0) for v in ASSETS_BY_SITE_DB.values()))
     add_ck("الزكاة", "الزكاة والضريبة المثبتة في 2026 (0 = غير معتمدة بعد)", -zakat_tax_26, 0.0, tol=1.0,
            note="فعّل خيار الاعتماد في تبويب الحاسبة لتحميل المبلغ")
+
+    BK = banks.summary()
+    add_ck("البنوك", "المرابحات: جداول الأقساط (أصل + ربح القسط القادم) مقابل القروض قصيرة الأجل بالمركز المالي (2026)",
+           BK["mur_principal"] + BK["mur_next_profit"], 16518837.0, tol=1000.0,
+           review="الفرق المتبقي نحو 89 ألف (استحقاقات/مصاريف تمويل مؤجلة). يُراجع مع كشف الراجحي. وبالمركز المالي تُعرض كل المرابحات قصيرة الأجل، بينما تظهر الجداول جزءاً غير متداول")
+    add_ck("البنوك", "هامش الضمانات النقدي (غير المنتهية) مقابل تأمين خطابات الضمان بالمركز المالي (2026)",
+           BK["guar_margin_live"], 9550682.0,
+           review="بيانات الضمانات بتواريخ 31/3/2026 (الراجحي) و31/12/2025 (الأهلي)، وتحتاج كشوف 30/9/2026 من البنوك")
+    if BK["bal_rows"]:
+        add_ck("البنوك", "أرصدة البنوك المرفوعة مقابل النقد وما في حكمه بالمركز المالي (2026)", BK["bal_total"], 30649316.0,
+               review="الفرق قد يشمل نقداً بالصندوق أو حسابات غير مدرجة أو فروق توقيت")
 
     ckdf = pd.DataFrame(CK)
     n_ok = int((ckdf["الحالة"].str.startswith("✅")).sum())
