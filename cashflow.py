@@ -80,6 +80,9 @@ DEFAULT_ACCT_RULES = [
     ["كود", "2010101101", "دفعات لمقاولي الباطن"],
     ["كود", "2010101201", "دفعات لمقاولي الباطن"],
     ["كود", "2010101", "مشتريات مواد تشغيلية وموردون"],
+    ["بيان", "شراء ارض", "شراء أصول وسيارات ومعدات"],
+    ["بيان", "شراء الارض", "شراء أصول وسيارات ومعدات"],
+    ["بيان", "محروقات", "تشغيل وصيانة السيارات والمعدات"],
     ["كود", "2014001001", "@بيان"],
     ["بيان", "استقطاع", "ضريبة الاستقطاع على التوزيعات"],
     ["بيان", "معجل", "الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)"],
@@ -134,8 +137,53 @@ DEFAULT_ACCT_RULES = [
     ["كود", "5", "مصاريف تشغيلية وإدارية أخرى"],
 ]
 
+# قواعد نشاط المورد (من ملف أنشطة الموردين) — الأولوية الأولى لمدفوعات الحساب الجامع. أول قاعدة تنطبق تحسم.
+DEFAULT_ACT_RULES = [
+    ["مقاول", "دفعات لمقاولي الباطن"],
+    ["اختبار", "دفعات لمقاولي الباطن"],
+    ["تأمين", "تجديد بوالص التأمين"],
+    ["تامين", "تجديد بوالص التأمين"],
+    ["قطع غيار", "تشغيل وصيانة السيارات والمعدات"],
+    ["ورشة", "تشغيل وصيانة السيارات والمعدات"],
+    ["محروقات", "تشغيل وصيانة السيارات والمعدات"],
+    ["كفرات", "تشغيل وصيانة السيارات والمعدات"],
+    ["زيوت", "تشغيل وصيانة السيارات والمعدات"],
+    ["بطاريات", "تشغيل وصيانة السيارات والمعدات"],
+    ["بنشر", "تشغيل وصيانة السيارات والمعدات"],
+    ["تتبع", "تشغيل وصيانة السيارات والمعدات"],
+    ["مؤجر", "إيجارات ومرافق"],
+    ["مياه", "إيجارات ومرافق"],
+    ["الكهرباء", "إيجارات ومرافق"],
+    ["شحن نقاط", "إقامات وتأشيرات ورسوم حكومية"],
+    ["مالك ارض", "شراء أصول وسيارات ومعدات"],
+    ["وكيل", "شراء أصول وسيارات ومعدات"],
+    ["سيارات", "شراء أصول وسيارات ومعدات"],
+    ["دورات", "مصاريف تشغيلية وإدارية أخرى"],
+    ["استشارات", "مصاريف تشغيلية وإدارية أخرى"],
+    ["قرطاسية", "مصاريف تشغيلية وإدارية أخرى"],
+    ["شبكات كمبيوتر", "مصاريف تشغيلية وإدارية أخرى"],
+    ["اثاث", "مصاريف تشغيلية وإدارية أخرى"],
+    ["ادوات سكن", "مصاريف تشغيلية وإدارية أخرى"],
+    ["اسفلت", "مشتريات مواد تشغيلية وموردون"],
+    ["حديد", "مشتريات مواد تشغيلية وموردون"],
+    ["خرسانة", "مشتريات مواد تشغيلية وموردون"],
+    ["اسمنت", "مشتريات مواد تشغيلية وموردون"],
+    ["مواد", "مشتريات مواد تشغيلية وموردون"],
+    ["مواسير", "مشتريات مواد تشغيلية وموردون"],
+    ["مستهلكة", "مشتريات مواد تشغيلية وموردون"],
+    ["امن وسلامة", "مشتريات مواد تشغيلية وموردون"],
+    ["نقليات", "مشتريات مواد تشغيلية وموردون"],
+    ["جولات", "مشتريات مواد تشغيلية وموردون"],
+    ["عدد وادوات", "مشتريات مواد تشغيلية وموردون"],
+    ["مورد", "مشتريات مواد تشغيلية وموردون"],
+]
+
 # قواعد اسم المورد (تُطبَّق على مدفوعات الحساب الجامع بعد مطابقتها مع تقرير الموردين بالتاريخ والمبلغ)
 DEFAULT_VENDOR_RULES = [
+    ["جزور الصفوة", "دفعات لمقاولي الباطن"],
+    ["الطلائع", "تشغيل وصيانة السيارات والمعدات"],
+    ["مبدع الثقب", "دفعات لمقاولي الباطن"],
+    ["بيلد زون", "دفعات لمقاولي الباطن"],
     ["للتأمين", "تجديد بوالص التأمين"],
     ["تأمين", "تجديد بوالص التأمين"],
     ["بوبا", "تجديد بوالص التأمين"],
@@ -337,9 +385,42 @@ def parse_vendors(raw):
     return pd.DataFrame(out, columns=REF_COLS)
 
 
+def _nm(x):
+    x = str(x or "")
+    for a, b in (("أ", "ا"), ("إ", "ا"), ("آ", "ا"), ("ة", "ه"), ("ى", "ي")):
+        x = x.replace(a, b)
+    return re.sub(r"[\s\-_/\\()\.]+", "", x)
+
+
+def parse_activities(raw):
+    """ملف أنشطة الموردين: اسم المورد (أول نص) ونشاطه (آخر نص)."""
+    ws = _open_xlsx(raw).active
+    out = []
+    for r in list(ws.iter_rows(values_only=True))[1:]:
+        s_ = [str(x).strip() for x in r if isinstance(x, str) and x.strip()]
+        if len(s_) >= 2:
+            out.append(["نشاط", "", 0.0, s_[0], s_[-1]])
+    return pd.DataFrame(out, columns=REF_COLS)
+
+
 def detect_ref(raw):
     wb = _open_xlsx(raw)
-    return "عميل" if "تفصيلي" in wb.sheetnames else "مورد"
+    if "تفصيلي" in wb.sheetnames:
+        return "عميل"
+    hdr = [str(c.value or "") for c in wb.active[1]]
+    return "نشاط" if any("الاعمال" in h for h in hdr) else "مورد"
+
+
+def _act_lookup(actmap, vendor):
+    if not vendor or not actmap:
+        return ""
+    k = _nm(vendor)
+    if k in actmap:
+        return actmap[k]
+    for kk, v in actmap.items():
+        if len(kk) >= 8 and len(k) >= 8 and (kk.startswith(k[:12]) or k.startswith(kk[:12])):
+            return v
+    return ""
 
 
 def _load_refs():
@@ -379,9 +460,10 @@ def _lookup(maps, date, amt):
 
 
 # ---------------- التصنيف ----------------
-def classify(lines, acct_rules, desc_rules, vend_rules=None, vmaps=None):
+def classify(lines, acct_rules, desc_rules, vend_rules=None, vmaps=None, act_rules=None, actmap=None):
     items = []
     vends = []
+    acts = []
     for _, r in lines.iterrows():
         code, name, desc = str(r["كود الحساب"]), str(r["الحساب المقابل"]), str(r["البيان"])
         item = None
@@ -395,8 +477,18 @@ def classify(lines, acct_rules, desc_rules, vend_rules=None, vmaps=None):
         if vmaps is not None and r["الأثر النقدي"] < 0:
             vend = _lookup(vmaps, str(r["التاريخ"]), r["الأثر النقدي"])
         vends.append(vend)
+        act = _act_lookup(actmap, vend)
+        acts.append(act)
         if item == "@بيان":
             item = None
+            if act:
+                for pat, tgt in (act_rules or []):
+                    if str(pat) in act:
+                        item = tgt
+                        break
+            if item is not None:
+                items.append(item)
+                continue
             for pat, tgt in desc_rules:
                 if str(pat) in desc:
                     item = tgt
@@ -419,6 +511,7 @@ def classify(lines, acct_rules, desc_rules, vend_rules=None, vmaps=None):
     out = lines.copy()
     out["البند"] = items
     out["المورد"] = vends
+    out["النشاط"] = acts
     out["المجموعة"] = out["البند"].map(lambda i: ITEM_GROUP.get(i, "ت-خارج"))
     return out
 
@@ -465,10 +558,21 @@ def _load_vrules():
     return pd.DataFrame(DEFAULT_VENDOR_RULES, columns=["النمط", "البند"])
 
 
+def _load_arules():
+    try:
+        if os.path.exists(RULES_FILE):
+            j = json.load(open(RULES_FILE, encoding="utf-8"))
+            if "act" in j:
+                return pd.DataFrame(j["act"], columns=["النمط", "البند"])
+    except Exception:
+        pass
+    return pd.DataFrame(DEFAULT_ACT_RULES, columns=["النمط", "البند"])
+
+
 def _save_rules(a, d, v=None):
     try:
         v = v if v is not None else st.session_state.get("cf_vrules", _load_vrules())
-        json.dump({"acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump({"acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist(), "act": st.session_state.get("cf_arules", _load_arules()).values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
     except Exception:
         pass
 
@@ -481,6 +585,8 @@ def _state():
         ss["cf_rules"] = _load_rules()
     if "cf_refs" not in ss:
         ss["cf_refs"] = _load_refs()
+    if "cf_arules" not in ss:
+        ss["cf_arules"] = _load_arules()
     if "cf_vrules" not in ss:
         ss["cf_vrules"] = _load_vrules()
     if "cf_info" not in ss:
@@ -497,7 +603,9 @@ def classified():
     refs = st.session_state.get("cf_refs", pd.DataFrame(columns=REF_COLS))
     vr = st.session_state.get("cf_vrules", pd.DataFrame(DEFAULT_VENDOR_RULES, columns=["النمط", "البند"]))
     vm = _ref_maps(refs, "مورد") if len(refs[refs["النوع"] == "مورد"]) else None
-    C = classify(L, ar.values.tolist(), dr.values.tolist(), vr.values.tolist(), vm)
+    ar_ = st.session_state.get("cf_arules", pd.DataFrame(DEFAULT_ACT_RULES, columns=["النمط", "البند"]))
+    actmap = {_nm(a): b for a, b in refs[refs["النوع"] == "نشاط"][["الجهة", "البيان"]].values}
+    C = classify(L, ar.values.tolist(), dr.values.tolist(), vr.values.tolist(), vm, ar_.values.tolist(), actmap)
     C["العميل"] = ""
     if len(refs[refs["النوع"] == "عميل"]):
         cm = _ref_maps(refs, "عميل")
@@ -577,17 +685,17 @@ def render_cashflow(ctx, build_styled_table):
                 continue
             try:
                 kind = detect_ref(raw)
-                new = parse_customers(raw) if kind == "عميل" else parse_vendors(raw)
+                new = parse_customers(raw) if kind == "عميل" else (parse_activities(raw) if kind == "نشاط" else parse_vendors(raw))
                 old = st.session_state["cf_refs"]
                 st.session_state["cf_refs"] = pd.concat([old[old["النوع"] != kind], new], ignore_index=True)
                 _save_refs(st.session_state["cf_refs"])
                 done.add(h)
-                st.success(f"{f.name}: تقرير {'العملاء' if kind == 'عميل' else 'الموردين'}، {len(new)} حركة بإجمالي {new['المبلغ'].sum():,.0f}.")
+                st.success(f"{f.name}: { {'عميل': 'تقرير العملاء', 'مورد': 'تقرير الموردين', 'نشاط': 'أنشطة الموردين'}[kind] }: {len(new)} سطراً.")
             except Exception as e:
                 st.error(f"تعذرت قراءة {f.name}: {e}")
     _rf = st.session_state["cf_refs"]
     if len(_rf):
-        st.caption("المراجع المحمّلة: عملاء %d حركة، موردون %d حركة." % ((_rf["النوع"] == "عميل").sum(), (_rf["النوع"] == "مورد").sum()))
+        st.caption("المراجع المحمّلة: عملاء %d حركة، موردون %d حركة، أنشطة %d مورداً." % ((_rf["النوع"] == "عميل").sum(), (_rf["النوع"] == "مورد").sum(), (_rf["النوع"] == "نشاط").sum()))
 
     if len(lines) == 0:
         st.markdown('<div class="cf-note">لا توجد بيانات بعد. ارفع تقرير المعاملات التفصيلي لشهر واحد على الأقل.</div>', unsafe_allow_html=True)
@@ -737,6 +845,13 @@ def _rules_editor(rules, unlocked):
                                            "البند": st.column_config.SelectboxColumn("البند", options=items)})
         d2 = st.data_editor(dr, num_rows="dynamic", use_container_width=True, hide_index=True, key="cf_ed_desc", disabled=not unlocked,
                             column_config={"البند": st.column_config.SelectboxColumn("البند", options=items)})
+        st.caption("قواعد نشاط المورد (من ملف الأنشطة المرفوع): أعلى أولوية لمدفوعات الحساب الجامع.")
+        ar3 = st.session_state.get("cf_arules", pd.DataFrame(DEFAULT_ACT_RULES, columns=["النمط", "البند"]))
+        a3 = st.data_editor(ar3, num_rows="dynamic", use_container_width=True, hide_index=True, key="cf_ed_act", disabled=not unlocked,
+                            column_config={"البند": st.column_config.SelectboxColumn("البند", options=items)})
+        if unlocked and not a3.dropna(how="all").equals(ar3):
+            st.session_state["cf_arules"] = a3.dropna(how="all")
+            _save_rules(a2, d2, st.session_state.get("cf_vrules"))
         st.caption("قواعد اسم المورد: تُطبَّق على مدفوعات الحساب الجامع إذا طابق تقرير الموردين المرفوع التاريخ والمبلغ.")
         vr = st.session_state.get("cf_vrules", pd.DataFrame(DEFAULT_VENDOR_RULES, columns=["النمط", "البند"]))
         v2 = st.data_editor(vr, num_rows="dynamic", use_container_width=True, hide_index=True, key="cf_ed_vend", disabled=not unlocked,
