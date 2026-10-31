@@ -25,7 +25,8 @@ CSS = """
 """
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bank_data.json")
-DEFAULT_ASOF = dt.date(2026, 9, 30)
+DEFAULT_ASOF = dt.date(2026, 9, 30)   # تاريخ المركز المالي للفحوصات والأرصدة
+TODAY = dt.date.today()                  # تاريخ احتساب المستخدم من التسهيلات (يشمل تمويل 27/10/2026)
 RAJHI, SAB, AHLI = "مصرف الراجحي", "البنك السعودي الأول (ساب)", "البنك الأهلي"
 ARAB, RIYAD, INMA, SAIB = "البنك العربي", "بنك الرياض", "مصرف الإنماء", "البنك السعودي للاستثمار"
 CASHB = "صناديق وعهد نقدية (غير بنكية)"
@@ -69,8 +70,8 @@ DEFAULT_GUAR = [
     # ساب (يشمل الهولندي سابقاً)
     _g(SAB, "ضمان نهائي موحد مكة 2013", "4000000916", "1313300014", 2291538, 687461.4, D(2013, 5, 19), D(2027, 1, 25), "هامش 30%"),
     _g(SAB, "ضمان نهائي موحد مكة 2016", "4000054877", "1628737", 2529000, 758700, D(2016, 9, 28), D(2027, 4, 30), "هامش 30%"),
-    _g(SAB, "ضمان نهائي موحد مكة 2026", "", "166197", 1909231, 95461.55, D(2026, 6, 2), D(2030, 11, 30), "هامش 5%. غير ظاهر في ميزان 30/9 (هامش ساب بالميزان 1,446,161.35)"),
-    _g(SAB, "ضمان ابتدائي (الحكير)", "", "", 5700000, 0, None, None, "التواريخ غير مذكورة بالملف. يُرجى التأكيد"),
+    _g(SAB, "ضمان نهائي موحد مكة 2026", "", "166197", 1909231, 0, D(2026, 6, 2), D(2030, 11, 30), "بدون هامش محتجز (إجمالي هامش ساب 1,446,161 يطابق الميزان)"),
+    _g(SAB, "ضمان ابتدائي (الحكير)", "", "", 5700000, 0, D(2026, 5, 6), D(2026, 11, 30), "ضمان ابتدائي، ينتهي 30/11/2026 ويُراجع تجديده أو إلغاؤه"),
 ]
 
 DEFAULT_FAC = [
@@ -82,10 +83,10 @@ DEFAULT_FAC = [
 ]
 
 DEFAULT_MST = [
-    ["تمويل 1", "تمويل فاتورة هلا السعودية (شراء سيارات)", "1.1", D(2025, 6, 24), 4049999.99, MST_ACTIVE],
-    ["تمويل 2", "تمويل شراء معدات وسيارات (مجموعة موردين)", "1.1", D(2025, 11, 10), 7239069.00, MST_ACTIVE],
-    ["تمويل 3", "تمويل شراء أصول (مجموعة موردين)", "1.1", D(2026, 3, 27), 5049764.98, MST_ACTIVE],
-    ["تمويل 4", "تمويل شراء شاحنات - تقنيات الشاحنات (بلفنجر)", "1.1", D(2026, 6, 22), 3001500.00, MST_ACTIVE],
+    ["تمويل 1", "فاتورة هلا السعودية (29 مركبة)", "1.1", D(2025, 6, 24), 4049999.99, MST_ACTIVE],
+    ["تمويل 2", "هلا السعودية + اليمني للسيارات + الجفالي + تقنيات الشاحنات (دفعة 1 من 3)", "1.1", D(2025, 11, 10), 7239069.00, MST_ACTIVE],
+    ["تمويل 3", "اليمني للسيارات + تقنيات الشاحنات (دفعة 2 من 3)", "1.1", D(2026, 3, 27), 5049764.98, MST_ACTIVE],
+    ["تمويل 4", "تقنيات الشاحنات (دفعة 3 من 3)", "1.1", D(2026, 6, 22), 3001500.00, MST_ACTIVE],
     ["تمويل 5", "تمويل رواتب ومتطلبات التشغيل (12 شهراً، سداد دفعة واحدة، سايبور 12 شهراً + 3%)", "1.3", D(2026, 10, 27), 12000000.00, MST_ACTIVE],
 ]
 
@@ -146,6 +147,18 @@ _TB = [
 ]
 DEFAULT_BAL = [[b, n, "جاري", "SAR", v, D(2026, 9, 30), "ميزان المراجعة 30/9/2026 (استرشادي)، الحساب " + c] for b, n, c, v in _TB]
 
+AST_COLS = ["التمويل", "المورد", "عدد الأصول", "قيمة الأصول بسجل الأصول (قبل الضريبة)", "إجمالي الفاتورة / الدفعة"]
+DEFAULT_AST = [
+    ["تمويل 1", "شركة هلا السعودية للسيارات", 29, 3882000.0, 4500000.0],
+    ["تمويل 2", "شركة هلا السعودية للسيارات", 12, 954000.0, 1110060.0],
+    ["تمويل 2", "شركة اليمني للسيارات", 14, 3100000.0, 3565000.0],
+    ["تمويل 2", "شركة الجفالي", 1, 450000.0, 517500.0],
+    ["تمويل 2", "شركة تقنيات الشاحنات (دفعة 1 من 3)", None, 2479000.0, 2850850.0],
+    ["تمويل 3", "شركة اليمني للسيارات", 10, 2400000.0, 2760000.0],
+    ["تمويل 3", "شركة تقنيات الشاحنات (دفعة 2 من 3)", None, 2479000.0, 2850850.0],
+    ["تمويل 4", "شركة تقنيات الشاحنات (دفعة 3 من 3)", None, 2900000.0, 3335000.0],
+]
+
 NA = "غير محدد: يُستكمل"
 DEFAULT_COST = [
     ["نوع التسهيل والغرض", "تسهيلات مرابحة وبيع آجل وضمانات ابتدائية ونهائية", "ضمانات بنكية (خطاب عرض تسهيلات إسلامية)", "ضمانات مغطاة نقدياً بالكامل، لا توجد تسهيلات"],
@@ -164,9 +177,9 @@ DEFAULT_COST = [
 ]
 
 DATE_COLS = {"bal": ["تاريخ الرصيد"], "guar": ["تاريخ الإصدار", "تاريخ الانتهاء"],
-             "mst": ["تاريخ التمويل"], "sch": ["تاريخ الاستحقاق"], "fac": [], "cost": []}
-COLS = {"bal": BAL_COLS, "guar": GUAR_COLS, "fac": FAC_COLS, "mst": MST_COLS, "sch": SCH_COLS, "cost": COST_COLS}
-NUM_COLS = {"bal": ["الرصيد (ريال)"], "guar": ["مبلغ الضمان", "الغطاء النقدي (الهامش)"], "fac": ["السقف"], "cost": [],
+             "mst": ["تاريخ التمويل"], "sch": ["تاريخ الاستحقاق"], "fac": [], "cost": [], "ast": []}
+COLS = {"bal": BAL_COLS, "guar": GUAR_COLS, "fac": FAC_COLS, "mst": MST_COLS, "sch": SCH_COLS, "cost": COST_COLS, "ast": AST_COLS}
+NUM_COLS = {"bal": ["الرصيد (ريال)"], "guar": ["مبلغ الضمان", "الغطاء النقدي (الهامش)"], "fac": ["السقف"], "cost": [], "ast": ["عدد الأصول", "قيمة الأصول بسجل الأصول (قبل الضريبة)", "إجمالي الفاتورة / الدفعة"],
             "mst": ["أصل التمويل"], "sch": ["القسط", "أصل القسط", "الربح"]}
 
 
@@ -196,6 +209,7 @@ def _defaults():
     return {
         "bal": _norm(pd.DataFrame(DEFAULT_BAL, columns=BAL_COLS), "bal"),
         "cost": _norm(pd.DataFrame(DEFAULT_COST, columns=COST_COLS), "cost"),
+        "ast": _norm(pd.DataFrame(DEFAULT_AST, columns=AST_COLS), "ast"),
         "guar": _norm(pd.DataFrame(DEFAULT_GUAR, columns=GUAR_COLS), "guar"),
         "fac": _norm(pd.DataFrame(DEFAULT_FAC, columns=FAC_COLS), "fac"),
         "mst": _norm(pd.DataFrame(DEFAULT_MST, columns=MST_COLS), "mst"),
@@ -320,10 +334,9 @@ def fac_used(cur, as_of):
     return used, mc
 
 
-def summary(as_of=None):
+def summary(as_of=DEFAULT_ASOF):
     """ملخص للفحوصات والواجهة الرئيسية."""
     _, cur, _ = _state()
-    as_of = as_of or st.session_state.get("bk_asof", DEFAULT_ASOF)
     used, mc = fac_used(cur, as_of)
     g = cur["guar"]
     act = g[g["حالة السجل"] == ST_OK].copy()
@@ -491,12 +504,13 @@ def render_banks(ctx, build_styled_table):
 
     st.subheader("🏦 البنوك: الأرصدة والتسهيلات والضمانات والمرابحات")
     c0, c1 = st.columns([1, 3])
-    as_of = c0.date_input("تاريخ المركز", value=DEFAULT_ASOF, key="bk_asof")
+    as_of = c0.date_input("تاريخ احتساب المستخدم والاستحقاق", value=max(TODAY, DEFAULT_ASOF), key="bk_asof")
     c1.markdown('<div class="bk-note">البيانات من الملفات المرسلة (اتفاقية تجديد الراجحي 3/2/2026، خطاب عرض ساب 10/9/2026، جداول المرابحات، '
                 'بيانات الضمانات 2025-2026). التعديل والرفع محميان بكلمة سر مركز التحديث. ويُحفظ التعديل في ملف bank_data.json بجوار التطبيق '
                 '(على الاستضافة المؤقتة قد يُفقد عند إعادة النشر، فاحتفظ بنسخة من الملف).</div>', unsafe_allow_html=True)
 
     S = summary(as_of)
+    S0 = summary(DEFAULT_ASOF)
     k = st.columns(4)
     k[0].metric("المرابحات القائمة (أصل)", f"{S['mur_principal']:,.0f}")
     k[1].metric("استحقاق تعاقدي بعد 12 شهراً", f"{S['mur_noncurrent']:,.0f}")
@@ -508,6 +522,7 @@ def render_banks(ctx, build_styled_table):
     # ------------------ أرصدة البنوك ------------------
     with t_bal:
         st.markdown('<div class="bk-title">أرصدة البنوك كما في آخر ميزان مراجعة</div>', unsafe_allow_html=True)
+        bal_date = st.date_input("تاريخ الأرصدة المرفوعة", value=DEFAULT_ASOF, key="bk_baldate")
         cA, cB = st.columns([1, 2])
         cA.download_button("⬇️ تنزيل نموذج رفع الأرصدة", _template_bytes(), file_name="نموذج_ارصدة_البنوك.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="bk_tpl")
@@ -521,7 +536,7 @@ def render_banks(ctx, build_styled_table):
                         name = up.name
                         def read(self_):
                             return raw
-                    newdf = _parse_balances(_F(), as_of)
+                    newdf = _parse_balances(_F(), bal_date)
                     base["bal"] = newdf
                     cur["bal"] = newdf.copy()
                     ver["bal"] += 1
@@ -736,6 +751,29 @@ def render_banks(ctx, build_styled_table):
             ("total", "الفرق", [tot_sched - defc - bs_loans]),
         ]
         st.table(build_styled_table(rec, ["مطابقة المرابحات مع الميزان والمركز المالي", "المبلغ (ريال)"]))
+
+        st.markdown('<div class="bk-title">تفاصيل التمويلات: الموردون وأوامر الشراء</div>', unsafe_allow_html=True)
+        with st.expander("✏️ تعديل تفاصيل الموردين", expanded=False):
+            ast = _editor("ast", "ast", locked, base, cur, ver)
+        a = ast.copy()
+        for c in ["عدد الأصول", "قيمة الأصول بسجل الأصول (قبل الضريبة)", "إجمالي الفاتورة / الدفعة"]:
+            a[c] = pd.to_numeric(a[c], errors="coerce")
+        a["_reg"] = a["قيمة الأصول بسجل الأصول (قبل الضريبة)"].fillna(0.0)
+        a["_inv"] = a["إجمالي الفاتورة / الدفعة"].fillna(0.0)
+        a["_vat"] = a["_reg"] * 0.15
+        a["_oth"] = a["_inv"] - a["_reg"] - a["_vat"]
+        rows = []
+        for fid, grp in a.groupby("التمويل", sort=False):
+            rows.append(("section", str(fid), []))
+            for _, r in grp.iterrows():
+                rows.append(("item", str(r["المورد"]), [None if pd.isna(r["عدد الأصول"]) else int(r["عدد الأصول"]), r["_reg"], r["_vat"], r["_oth"], r["_inv"]]))
+            inv = float(grp["_inv"].sum())
+            rows.append(("subtotal", f"إجمالي {fid}: تمويل البنك 90% = {inv * 0.9:,.0f}، والدفعة المقدمة 10% = {inv * 0.1:,.0f}",
+                         [None, grp["_reg"].sum(), grp["_vat"].sum(), grp["_oth"].sum(), inv]))
+        rows.append(("total", "إجمالي التمويلات", [None, a["_reg"].sum(), a["_vat"].sum(), a["_oth"].sum(), a["_inv"].sum()]))
+        st.table(build_styled_table(rows, ["المورد", "عدد الأصول", "قيمة الأصول (سجل الأصول)", "ضريبة القيمة المضافة 15%", "رسوم تسجيل وأخرى (الفرق)", "إجمالي الفاتورة / الدفعة"]))
+        st.markdown('<div class="bk-fx">رسوم التسجيل والأخرى = إجمالي الفاتورة − قيمة سجل الأصول − 15% ضريبة. تقنيات الشاحنات أمر شراء واحد مموَّل بثلاث دفعات (تمويل 2 و3 و4)، '
+                    'وقيمة كل دفعة قبل الضريبة موزعة من الفاتورة، ومجموع الشاحنات بسجل الأصول 7,858,000 × 1.15 = 9,036,700 تماماً.</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="bk-title">جدول الأقساط التفصيلي</div>', unsafe_allow_html=True)
         s = sch.copy()
