@@ -20,7 +20,9 @@ CSS = """
 """
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_lines.csv")
+REF_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_refs.csv")
 RULES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_rules.json")
+ADV_AMT = 581348.66
 BANK_PREFIX = "10101"
 ADMIN_UNITS = {"ادارة المشاريع"}
 UNCLASS_IN, UNCLASS_OUT = "متحصلات أخرى غير مصنفة", "مدفوعات أخرى غير مصنفة"
@@ -45,7 +47,9 @@ ITEMS = [
     ("إقامات وتأشيرات ورسوم حكومية", "ت-خارج"),
     ("رسوم تصاريح الحفر والإخلاء والبلديات", "ت-خارج"),
     ("إيجارات ومرافق", "ت-خارج"),
-    ("ضريبة القيمة المضافة والزكاة والضرائب", "ت-خارج"),
+    ("ضريبة القيمة المضافة", "ت-خارج"),
+    ("الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)", "ت-خارج"),
+    ("ضريبة الاستقطاع على التوزيعات", "م"),
     ("مصاريف تشغيلية وإدارية أخرى", "ت-خارج"),
     (UNCLASS_IN, "ت-داخل"),
     (UNCLASS_OUT, "ت-خارج"),
@@ -77,9 +81,13 @@ DEFAULT_ACCT_RULES = [
     ["كود", "2010101201", "دفعات لمقاولي الباطن"],
     ["كود", "2010101", "مشتريات مواد تشغيلية وموردون"],
     ["كود", "2014001001", "@بيان"],
-    ["كود", "2014040001", "ضريبة القيمة المضافة والزكاة والضرائب"],
-    ["كود", "2014041", "ضريبة القيمة المضافة والزكاة والضرائب"],
-    ["كود", "5020303016", "ضريبة القيمة المضافة والزكاة والضرائب"],
+    ["بيان", "استقطاع", "ضريبة الاستقطاع على التوزيعات"],
+    ["بيان", "معجل", "الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)"],
+    ["بيان", "زكا", "الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)"],
+    ["بيان", "ضريبة دخل", "الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)"],
+    ["كود", "2014040001", "ضريبة القيمة المضافة"],
+    ["كود", "2014041", "ضريبة القيمة المضافة"],
+    ["كود", "5020303016", "الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)"],
     ["كود", "2019101001", "رسوم تصاريح الحفر والإخلاء والبلديات"],
     ["كود", "2019011001", "مكافآت وتذاكر العاملين"],
     ["اسم", "مرابحات", "سداد التمويل والمرابحات"],
@@ -124,6 +132,20 @@ DEFAULT_ACCT_RULES = [
     ["اسم", "مشتريات", "مشتريات مواد تشغيلية وموردون"],
     ["اسم", "نقليات مواد", "مشتريات مواد تشغيلية وموردون"],
     ["كود", "5", "مصاريف تشغيلية وإدارية أخرى"],
+]
+
+# قواعد اسم المورد (تُطبَّق على مدفوعات الحساب الجامع بعد مطابقتها مع تقرير الموردين بالتاريخ والمبلغ)
+DEFAULT_VENDOR_RULES = [
+    ["للتأمين", "تجديد بوالص التأمين"],
+    ["تأمين", "تجديد بوالص التأمين"],
+    ["بوبا", "تجديد بوالص التأمين"],
+    ["الدريس", "تشغيل وصيانة السيارات والمعدات"],
+    ["للسيارات", "تشغيل وصيانة السيارات والمعدات"],
+    ["البترول", "تشغيل وصيانة السيارات والمعدات"],
+    ["مصنع", "مشتريات مواد تشغيلية وموردون"],
+    ["للمقاولات", "دفعات لمقاولي الباطن"],
+    ["مقاول", "دفعات لمقاولي الباطن"],
+    ["اسناد", "دفعات لمقاولي الباطن"],
 ]
 
 # قواعد البيان للحساب الجامع (ارصدة دائنة اخرى)
@@ -284,9 +306,82 @@ def bank_effects(df):
     return res, info
 
 
+# ---------------- تقارير مرجعية (عملاء / موردون) ----------------
+REF_COLS = ["النوع", "التاريخ", "المبلغ", "الجهة", "البيان"]
+
+
+def parse_customers(raw):
+    """تقرير العملاء (ورقة تفصيلي): سطور القبض."""
+    wb = _open_xlsx(raw)
+    ws = wb["تفصيلي"] if "تفصيلي" in wb.sheetnames else wb.worksheets[-1]
+    out = []
+    for r in ws.iter_rows(values_only=True):
+        r = list(r) + [None] * 9
+        if r[6] == "قبض" and isinstance(r[5], (dt.datetime, dt.date)):
+            out.append(["عميل", pd.Timestamp(r[5]).strftime("%Y-%m-%d"), round(_num(r[1]), 2), str(r[4] or ""), str(r[3] or "")])
+    return pd.DataFrame(out, columns=REF_COLS)
+
+
+def parse_vendors(raw):
+    """تقرير الموردين (حركة الموردين): سطور المدفوعات."""
+    wb = _open_xlsx(raw)
+    ws = wb.active
+    out = []
+    for r in ws.iter_rows(values_only=True):
+        d = next((x for x in r if isinstance(x, (dt.datetime, dt.date))), None)
+        if d is None:
+            continue
+        strs = [x for x in r if isinstance(x, str)]
+        if len(strs) >= 3 and strs[2] == "مدفوعات":
+            out.append(["مورد", pd.Timestamp(d).strftime("%Y-%m-%d"), round(_num(r[2]), 2), strs[1], strs[0]])
+    return pd.DataFrame(out, columns=REF_COLS)
+
+
+def detect_ref(raw):
+    wb = _open_xlsx(raw)
+    return "عميل" if "تفصيلي" in wb.sheetnames else "مورد"
+
+
+def _load_refs():
+    try:
+        if os.path.exists(REF_FILE):
+            return pd.read_csv(REF_FILE, encoding="utf-8-sig").fillna("")[REF_COLS]
+    except Exception:
+        pass
+    return pd.DataFrame(columns=REF_COLS)
+
+
+def _save_refs(d):
+    try:
+        d.to_csv(REF_FILE, index=False, encoding="utf-8-sig")
+    except Exception:
+        pass
+
+
+def _ref_maps(refs, kind):
+    """مفتاح (تاريخ، مبلغ) ← جهة، ومفتاح (شهر، مبلغ) ← جهة إن كان فريداً."""
+    R = refs[refs["النوع"] == kind]
+    exact, monthly, cnt = {}, {}, {}
+    for _, r in R.iterrows():
+        a = round(abs(float(r["المبلغ"])), 2)
+        exact.setdefault((r["التاريخ"], a), r["الجهة"])
+        mk = (str(r["التاريخ"])[:7], a)
+        cnt[mk] = cnt.get(mk, 0) + 1
+        monthly[mk] = r["الجهة"]
+    monthly = {k: v for k, v in monthly.items() if cnt[k] == 1}
+    return exact, monthly
+
+
+def _lookup(maps, date, amt):
+    exact, monthly = maps
+    a = round(abs(float(amt)), 2)
+    return exact.get((date, a)) or monthly.get((str(date)[:7], a)) or ""
+
+
 # ---------------- التصنيف ----------------
-def classify(lines, acct_rules, desc_rules):
+def classify(lines, acct_rules, desc_rules, vend_rules=None, vmaps=None):
     items = []
+    vends = []
     for _, r in lines.iterrows():
         code, name, desc = str(r["كود الحساب"]), str(r["الحساب المقابل"]), str(r["البيان"])
         item = None
@@ -296,12 +391,21 @@ def classify(lines, acct_rules, desc_rules):
             if hit:
                 item = tgt
                 break
+        vend = ""
+        if vmaps is not None and r["الأثر النقدي"] < 0:
+            vend = _lookup(vmaps, str(r["التاريخ"]), r["الأثر النقدي"])
+        vends.append(vend)
         if item == "@بيان":
             item = None
             for pat, tgt in desc_rules:
                 if str(pat) in desc:
                     item = tgt
                     break
+            if item is None and vend:
+                for pat, tgt in (vend_rules or []):
+                    if str(pat) in vend:
+                        item = tgt
+                        break
             if item is None:
                 item = UNCLASS_OUT if r["الأثر النقدي"] < 0 else UNCLASS_IN
         if item is None:
@@ -314,6 +418,7 @@ def classify(lines, acct_rules, desc_rules):
         items.append(item)
     out = lines.copy()
     out["البند"] = items
+    out["المورد"] = vends
     out["المجموعة"] = out["البند"].map(lambda i: ITEM_GROUP.get(i, "ت-خارج"))
     return out
 
@@ -349,9 +454,21 @@ def _load_rules():
     return pd.DataFrame(DEFAULT_ACCT_RULES, columns=["الحقل", "النمط", "البند"]), pd.DataFrame(DEFAULT_DESC_RULES, columns=["النمط", "البند"])
 
 
-def _save_rules(a, d):
+def _load_vrules():
     try:
-        json.dump({"acct": a.values.tolist(), "desc": d.values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
+        if os.path.exists(RULES_FILE):
+            j = json.load(open(RULES_FILE, encoding="utf-8"))
+            if "vend" in j:
+                return pd.DataFrame(j["vend"], columns=["النمط", "البند"])
+    except Exception:
+        pass
+    return pd.DataFrame(DEFAULT_VENDOR_RULES, columns=["النمط", "البند"])
+
+
+def _save_rules(a, d, v=None):
+    try:
+        v = v if v is not None else st.session_state.get("cf_vrules", _load_vrules())
+        json.dump({"acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
     except Exception:
         pass
 
@@ -362,6 +479,10 @@ def _state():
         ss["cf_lines"] = _load_lines()
     if "cf_rules" not in ss:
         ss["cf_rules"] = _load_rules()
+    if "cf_refs" not in ss:
+        ss["cf_refs"] = _load_refs()
+    if "cf_vrules" not in ss:
+        ss["cf_vrules"] = _load_vrules()
     if "cf_info" not in ss:
         ss["cf_info"] = {}
     return ss["cf_lines"], ss["cf_rules"]
@@ -373,7 +494,19 @@ def classified():
         return lines.assign(البند=[], المجموعة=[])
     L = lines.copy()
     L["الأثر النقدي"] = pd.to_numeric(L["الأثر النقدي"], errors="coerce").fillna(0.0)
-    return classify(L, ar.values.tolist(), dr.values.tolist())
+    refs = st.session_state.get("cf_refs", pd.DataFrame(columns=REF_COLS))
+    vr = st.session_state.get("cf_vrules", pd.DataFrame(DEFAULT_VENDOR_RULES, columns=["النمط", "البند"]))
+    vm = _ref_maps(refs, "مورد") if len(refs[refs["النوع"] == "مورد"]) else None
+    C = classify(L, ar.values.tolist(), dr.values.tolist(), vr.values.tolist(), vm)
+    C["العميل"] = ""
+    if len(refs[refs["النوع"] == "عميل"]):
+        cm = _ref_maps(refs, "عميل")
+        isc = C["البند"].isin(["تحصيلات من العملاء", UNCLASS_IN, "متحصلات تشغيلية أخرى"]) & (C["الأثر النقدي"] > 0)
+        cu = C.loc[isc].apply(lambda r: _lookup(cm, str(r["التاريخ"]), r["الأثر النقدي"]), axis=1)
+        C.loc[isc, "العميل"] = cu
+        hit = isc & (C["العميل"] != "")
+        C.loc[hit, "العقد"] = C.loc[hit, "العميل"].map(contract_of)
+    return C
 
 
 def summary():
@@ -432,6 +565,29 @@ def render_cashflow(ctx, build_styled_table):
             except Exception as e:
                 st.error(f"تعذرت قراءة {f.name}: {e}")
         lines = st.session_state["cf_lines"]
+
+    upr = st.file_uploader("تقارير مرجعية: تقرير العملاء 2026 (ملخص + تفصيلي) وتقرير الموردين 2026 — يُستخدمان لتحديد العقد والمورد لكل سطر", type=["xlsx"],
+                           accept_multiple_files=True, key="cf_upref", disabled=not unlocked)
+    if upr and unlocked:
+        for f in upr:
+            raw = f.getvalue()
+            h = "ref" + hashlib.md5(raw).hexdigest()
+            done = st.session_state.setdefault("cf_hashes", set())
+            if h in done:
+                continue
+            try:
+                kind = detect_ref(raw)
+                new = parse_customers(raw) if kind == "عميل" else parse_vendors(raw)
+                old = st.session_state["cf_refs"]
+                st.session_state["cf_refs"] = pd.concat([old[old["النوع"] != kind], new], ignore_index=True)
+                _save_refs(st.session_state["cf_refs"])
+                done.add(h)
+                st.success(f"{f.name}: تقرير {'العملاء' if kind == 'عميل' else 'الموردين'}، {len(new)} حركة بإجمالي {new['المبلغ'].sum():,.0f}.")
+            except Exception as e:
+                st.error(f"تعذرت قراءة {f.name}: {e}")
+    _rf = st.session_state["cf_refs"]
+    if len(_rf):
+        st.caption("المراجع المحمّلة: عملاء %d حركة، موردون %d حركة." % ((_rf["النوع"] == "عميل").sum(), (_rf["النوع"] == "مورد").sum()))
 
     if len(lines) == 0:
         st.markdown('<div class="cf-note">لا توجد بيانات بعد. ارفع تقرير المعاملات التفصيلي لشهر واحد على الأقل.</div>', unsafe_allow_html=True)
@@ -529,6 +685,25 @@ def render_cashflow(ctx, build_styled_table):
     else:
         st.caption("لا تحصيلات مصنفة في الأشهر المختارة.")
 
+    # ---------- تحصيلات غير محددة العقد ----------
+    NR = C[(C["البند"] == "تحصيلات من العملاء") & (C["العقد"] == NO_CONTRACT)].sort_values("التاريخ")
+    if len(NR):
+        st.markdown('<div class="cf-title">تحصيلات غير محددة العقد — بانتظار التحقق (محتسبة ضمن «مركز عام / غير محدد»)</div>', unsafe_allow_html=True)
+        st.caption(f"{len(NR)} سطراً بإجمالي {NR['الأثر النقدي'].sum():,.0f}. ارفع تقرير العملاء لتحديدها تلقائياً بمطابقة التاريخ والمبلغ.")
+        nn = [("item", str(r["البيان"])[:80], [str(r["التاريخ"]), str(r["القيد"]), str(r["مركز التكلفة"]), float(r["الأثر النقدي"])]) for _, r in NR.iterrows()]
+        st.table(build_styled_table(nn, ["البيان", "التاريخ", "القيد", "مركز التكلفة", "المبلغ"]))
+
+    # ---------- الدفعات المعجلة الضريبية ----------
+    st.markdown('<div class="cf-title">الدفعات المعجلة الضريبية 2026 (إشعار الهيئة بتاريخ 26/03/2026)</div>', unsafe_allow_html=True)
+    zt = C[C["البند"] == "الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)"]
+    adv = []
+    for lbl, due in [("الدفعة الأولى", "2026-06-30"), ("الدفعة الثانية", "2026-09-30"), ("الدفعة الثالثة", "2026-12-31")]:
+        hit = zt[(zt["الأثر النقدي"].abs() - ADV_AMT).abs() < 1.0]
+        paid = len(hit) > 0 and due <= dt.date.today().strftime("%Y-%m-%d")
+        adv.append(("item", lbl, [due, ADV_AMT, "تظهر حركة بالمبلغ في الأشهر المحمّلة" if len(hit) else "لا تظهر في الأشهر المحمّلة بعد"]))
+    adv.append(("total", "المجموع", ["", ADV_AMT * 3, ""]))
+    st.table(build_styled_table(adv, ["الدفعة", "الاستحقاق", "المبلغ", "الحالة في الحركة المحمّلة"]))
+
     # ---------- تفصيل بند ----------
     st.markdown('<div class="cf-title">تفصيل أي بند (القيود التي كوّنته)</div>', unsafe_allow_html=True)
     present = [i for i, _ in ITEMS if i in set(C["البند"])]
@@ -562,9 +737,15 @@ def _rules_editor(rules, unlocked):
                                            "البند": st.column_config.SelectboxColumn("البند", options=items)})
         d2 = st.data_editor(dr, num_rows="dynamic", use_container_width=True, hide_index=True, key="cf_ed_desc", disabled=not unlocked,
                             column_config={"البند": st.column_config.SelectboxColumn("البند", options=items)})
+        st.caption("قواعد اسم المورد: تُطبَّق على مدفوعات الحساب الجامع إذا طابق تقرير الموردين المرفوع التاريخ والمبلغ.")
+        vr = st.session_state.get("cf_vrules", pd.DataFrame(DEFAULT_VENDOR_RULES, columns=["النمط", "البند"]))
+        v2 = st.data_editor(vr, num_rows="dynamic", use_container_width=True, hide_index=True, key="cf_ed_vend", disabled=not unlocked,
+                            column_config={"البند": st.column_config.SelectboxColumn("البند", options=items)})
         if unlocked:
             a2 = a2.dropna(how="all")
             d2 = d2.dropna(how="all")
-            if not (a2.equals(ar) and d2.equals(dr)):
+            v2 = v2.dropna(how="all")
+            if not (a2.equals(ar) and d2.equals(dr) and v2.equals(vr)):
                 st.session_state["cf_rules"] = (a2, d2)
-                _save_rules(a2, d2)
+                st.session_state["cf_vrules"] = v2
+                _save_rules(a2, d2, v2)
