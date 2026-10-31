@@ -21,6 +21,7 @@ CSS = """
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_lines.csv")
 REF_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_refs.csv")
+RULES_VERSION = 4
 RULES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_rules.json")
 ADV_AMT = 581348.66
 DEFAULT_OPEN = 31071365.31  # مجموع الحسابات البنكية 1-01-01 في ميزان 31/12/2025 (الصناديق والعهد 91,179 مستبعدة)
@@ -55,6 +56,7 @@ ITEMS = [
     (UNCLASS_IN, "ت-داخل"),
     (UNCLASS_OUT, "ت-خارج"),
     ("شراء أصول وسيارات ومعدات", "س"),
+    ("استثمار في صندوق رصانة الجهات الأربع", "س"),
     ("متحصلات بيع أصول وسيارات", "س"),
     ("متحصلات التمويل والمرابحات", "م"),
     ("سداد التمويل والمرابحات", "م"),
@@ -85,6 +87,12 @@ DEFAULT_ACCT_RULES = [
     ["بيان", "شراء الارض", "شراء أصول وسيارات ومعدات"],
     ["بيان", "محروقات", "تشغيل وصيانة السيارات والمعدات"],
     ["كود", "2014001001", "@بيان"],
+    ["كود", "1011601012", "استثمار في صندوق رصانة الجهات الأربع"],
+    ["كود", "1011601", "تمويل العهد والسلف (تحويل لصناديق العاملين)"],
+    ["كود", "3040", "توزيعات أرباح"],
+    ["كود", "3030", "توزيعات أرباح"],
+    ["كود", "2017001001", "الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)"],
+    ["كود", "1013515", "عمولات ومصاريف بنكية"],
     ["بيان", "استقطاع", "ضريبة الاستقطاع على التوزيعات"],
     ["بيان", "معجل", "الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)"],
     ["بيان", "زكا", "الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)"],
@@ -181,6 +189,8 @@ DEFAULT_ACT_RULES = [
 
 # قواعد اسم المورد (تُطبَّق على مدفوعات الحساب الجامع بعد مطابقتها مع تقرير الموردين بالتاريخ والمبلغ)
 DEFAULT_VENDOR_RULES = [
+    ["اتحاد الخليج", "تجديد بوالص التأمين"],
+    ["للعقارات", "إيجارات ومرافق"],
     ["جزور الصفوة", "دفعات لمقاولي الباطن"],
     ["الطلائع", "تشغيل وصيانة السيارات والمعدات"],
     ["مبدع الثقب", "دفعات لمقاولي الباطن"],
@@ -199,6 +209,16 @@ DEFAULT_VENDOR_RULES = [
 
 # قواعد البيان للحساب الجامع (ارصدة دائنة اخرى)
 DEFAULT_DESC_RULES = [
+    ["قبض من شركة اليمني", "شراء أصول وسيارات ومعدات"],
+    ["رصانه", "استثمار في صندوق رصانة الجهات الأربع"],
+    ["رصانة", "استثمار في صندوق رصانة الجهات الأربع"],
+    ["بوبا", "تجديد بوالص التأمين"],
+    ["اثبات قبض", "متحصلات تشغيلية أخرى"],
+    ["قبض من", "متحصلات تشغيلية أخرى"],
+    ["اضافات شهر", "الرواتب والأجور والبدلات"],
+    ["اضافي", "الرواتب والأجور والبدلات"],
+    ["القسط", "تجديد بوالص التأمين"],
+    ["عقارات", "إيجارات ومرافق"],
     ["قطع غيار", "تشغيل وصيانة السيارات والمعدات"],
     ["كفرات", "تشغيل وصيانة السيارات والمعدات"],
     ["زيت", "تشغيل وصيانة السيارات والمعدات"],
@@ -368,6 +388,8 @@ def parse_customers(raw):
         r = list(r) + [None] * 9
         if r[6] == "قبض" and isinstance(r[5], (dt.datetime, dt.date)):
             out.append(["عميل", pd.Timestamp(r[5]).strftime("%Y-%m-%d"), round(_num(r[1]), 2), str(r[4] or ""), str(r[3] or "")])
+        elif r[6] == "فاتورة" and r[7] is not None:
+            out.append(["فاتورة", pd.Timestamp(r[5]).strftime("%Y-%m-%d") if isinstance(r[5], (dt.datetime, dt.date)) else "", round(_num(r[2]), 2), str(r[4] or ""), str(r[7])])
     return pd.DataFrame(out, columns=REF_COLS)
 
 
@@ -538,11 +560,20 @@ def _save_lines(d):
         pass
 
 
+def _merge(saved, default, nkey=1):
+    """قواعد محفوظة بإصدار أقدم: تُؤخذ الافتراضية الجديدة ثم تُضاف إليها القواعد التي أضافها المستخدم."""
+    dk = {tuple(map(str, r[:nkey])) for r in default}
+    return [list(r) for r in default] + [list(r) for r in saved if tuple(map(str, r[:nkey])) not in dk]
+
+
 def _load_rules():
     try:
         if os.path.exists(RULES_FILE):
             j = json.load(open(RULES_FILE, encoding="utf-8"))
-            return pd.DataFrame(j["acct"], columns=["الحقل", "النمط", "البند"]), pd.DataFrame(j["desc"], columns=["النمط", "البند"])
+            a, d = j["acct"], j["desc"]
+            if j.get("ver", 0) < RULES_VERSION:
+                a, d = _merge(a, DEFAULT_ACCT_RULES, 2), _merge(d, DEFAULT_DESC_RULES, 1)
+            return pd.DataFrame(a, columns=["الحقل", "النمط", "البند"]), pd.DataFrame(d, columns=["النمط", "البند"])
     except Exception:
         pass
     return pd.DataFrame(DEFAULT_ACCT_RULES, columns=["الحقل", "النمط", "البند"]), pd.DataFrame(DEFAULT_DESC_RULES, columns=["النمط", "البند"])
@@ -553,7 +584,8 @@ def _load_vrules():
         if os.path.exists(RULES_FILE):
             j = json.load(open(RULES_FILE, encoding="utf-8"))
             if "vend" in j:
-                return pd.DataFrame(j["vend"], columns=["النمط", "البند"])
+                v = j["vend"] if j.get("ver", 0) >= RULES_VERSION else _merge(j["vend"], DEFAULT_VENDOR_RULES, 1)
+                return pd.DataFrame(v, columns=["النمط", "البند"])
     except Exception:
         pass
     return pd.DataFrame(DEFAULT_VENDOR_RULES, columns=["النمط", "البند"])
@@ -564,7 +596,8 @@ def _load_arules():
         if os.path.exists(RULES_FILE):
             j = json.load(open(RULES_FILE, encoding="utf-8"))
             if "act" in j:
-                return pd.DataFrame(j["act"], columns=["النمط", "البند"])
+                v = j["act"] if j.get("ver", 0) >= RULES_VERSION else _merge(j["act"], DEFAULT_ACT_RULES, 1)
+                return pd.DataFrame(v, columns=["النمط", "البند"])
     except Exception:
         pass
     return pd.DataFrame(DEFAULT_ACT_RULES, columns=["النمط", "البند"])
@@ -573,7 +606,7 @@ def _load_arules():
 def _save_rules(a, d, v=None):
     try:
         v = v if v is not None else st.session_state.get("cf_vrules", _load_vrules())
-        json.dump({"acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist(), "open": float(st.session_state.get("cf_open", DEFAULT_OPEN)), "act": st.session_state.get("cf_arules", _load_arules()).values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump({"ver": RULES_VERSION, "acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist(), "open": float(st.session_state.get("cf_open", DEFAULT_OPEN)), "act": st.session_state.get("cf_arules", _load_arules()).values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
     except Exception:
         pass
 
@@ -616,7 +649,15 @@ def classified():
     if len(refs[refs["النوع"] == "عميل"]):
         cm = _ref_maps(refs, "عميل")
         isc = C["البند"].isin(["تحصيلات من العملاء", UNCLASS_IN, "متحصلات تشغيلية أخرى"]) & (C["الأثر النقدي"] > 0)
-        cu = C.loc[isc].apply(lambda r: _lookup(cm, str(r["التاريخ"]), r["الأثر النقدي"]), axis=1)
+        inv = {str(b).split(".")[0]: a for a, b in refs[refs["النوع"] == "فاتورة"][["الجهة", "البيان"]].values}
+
+        def _cust(r):
+            c = _lookup(cm, str(r["التاريخ"]), r["الأثر النقدي"])
+            if c or not inv:
+                return c
+            hits = [inv[n] for n in re.findall(r"\d{4,6}", str(r["البيان"])) if n in inv]
+            return max(set(hits), key=hits.count) if hits else ""
+        cu = C.loc[isc].apply(_cust, axis=1)
         C.loc[isc, "العميل"] = cu
         hit = isc & (C["العميل"] != "")
         C.loc[hit, "العقد"] = C.loc[hit, "العميل"].map(contract_of)
@@ -802,6 +843,11 @@ def render_cashflow(ctx, build_styled_table):
         _m9 = [m for m in months_all if m <= "2026-09"]
         _full = len(_m9) == 9
         _flows = float(C_all[C_all["الشهر"].isin(_m9)]["الأثر النقدي"].sum())
+        if "2026-09" in months_all:
+            _cs = float(st.session_state.get("cf_open", DEFAULT_OPEN)) + float(C_all[C_all["الشهر"] <= "2026-09"]["الأثر النقدي"].sum())
+            _dif = _cs - _tb
+            st.markdown(f'<div class="cf-fx">مطابقة 30/9: رصيد البنوك المحسوب من التدفقات = {_cs:,.0f}، ورصيد الميزان = {_tb:,.0f}، الفرق = {_dif:,.0f} '
+                        f'({"مطابق" if abs(_dif) < 1 else "يحتاج مراجعة: حركات ناقصة أو تقارير شهرية غير مكتملة"}). الأشهر المحمّلة حتى سبتمبر: {len(_m9)} من 9.</div>', unsafe_allow_html=True)
         if _full:
             oc2.markdown(f'<div class="cf-fx">الرصيد الافتتاحي المستنتج = رصيد البنوك في ميزان 30/9 ({_tb:,.0f}) − صافي تدفقات يناير–سبتمبر ({_flows:,.0f}) = {_tb - _flows:,.0f}. قارنه برصيد 31/12/2025 الفعلي.</div>', unsafe_allow_html=True)
         else:
