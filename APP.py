@@ -15,10 +15,11 @@ import numpy as np
 import plotly.express as px
 import io
 import importlib
-import exec_summary, zakat_calc, banks
+import exec_summary, zakat_calc, banks, cashflow
 importlib.reload(exec_summary)
 importlib.reload(zakat_calc)
 importlib.reload(banks)
+importlib.reload(cashflow)
 
 # إعدادات الصفحة الرئيسية
 st.set_page_config(
@@ -471,7 +472,7 @@ with grp_fs:
 with grp_zk:
     tab_zk = st.container()
 with grp_bank:
-    tab_bank = st.container()
+    tab_bank, tab_cfa = st.tabs(["🏦 البنوك والتسهيلات", "💧 التدفقات النقدية الفعلية الشهرية"])
 with grp_proj:
     tab8, tab6, tab7, tab9, tab10, tab11, tab12, tab13 = st.tabs([
         "🏢 تحليل الشركة", "🏗️ قوائم دخل المشاريع (2021-2026)", "📋 الإسناد والتنفيذ والفوترة",
@@ -716,6 +717,9 @@ with tab_zk:
 # ------------------------------------------
 with tab_bank:
     banks.render_banks(EX_CTX, build_styled_table)
+
+with tab_cfa:
+    cashflow.render_cashflow(EX_CTX, build_styled_table)
 
 # ------------------------------------------
 with tab5:
