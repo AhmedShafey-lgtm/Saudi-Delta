@@ -14,6 +14,8 @@ CSS = """
                color:#7A4B00; padding:8px 12px; border-radius:6px; font-size:0.95rem; margin:6px 0; }
     .cf-fx { direction: rtl; text-align: right; font-size:0.9rem; color:#0B2A6F; background:#EAF1FF;
              border-right:3px solid #1E3A8A; padding:4px 10px; border-radius:4px; font-weight:600; margin:4px 0 8px 0; }
+    [class*="st-key-cf_grid"] [data-testid="stDataFrame"], [class*="st-key-cf_grid"] [data-testid="stDataFrame"] * {
+        direction: ltr !important; text-align: left !important; }
     .cf-title { direction: rtl; text-align: right; background: linear-gradient(90deg,#1E3A8A,#3B5FC4); color:#fff;
                 padding:9px 14px; border-radius:6px; margin:18px 0 8px 0; font-weight:700; font-size:1.1rem; }
 </style>
@@ -21,7 +23,7 @@ CSS = """
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_lines.csv")
 REF_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_refs.csv")
-RULES_VERSION = 6
+RULES_VERSION = 7
 RULES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_rules.json")
 ADV_AMT = 581348.66
 DEFAULT_OPEN = 31071365.31  # مجموع الحسابات البنكية 1-01-01 في ميزان 31/12/2025 (الصناديق والعهد 91,179 مستبعدة)
@@ -37,7 +39,7 @@ OVR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_ov
 OVR_COLS = ["المفتاح", "البند", "العقد"]
 
 # تسمية مراكز التكلفة في التقرير (مركز التكلفة كما في النظام ← الاسم المطلوب)؛ المراكز المتعددة لنفس الموقع تُجمَّع تحت اسم واحد
-DEFAULT_CC_MAP = [["مركز التكلفة العام بالادارة", "الادارة العامة"], ["العقد الموحد بابها", "العقد الموحد بابها"], ["العقد الموحد الباحه 4400014970", "العقد الموحد بالباحة"], ["عقد موحد الباحة 8867 الجديد 2016", "العقد الموحد بالباحة"], ["عقد موحد الرياض الجديد 8546", "العقد الموحد بالرياض"], ["عقد موحد أملج الجديد 8705", "العقد الموحد بالمج"], ["عقد موحد المجاردة الجديد 8840", "العقد الموحد بالمجاردة"], ["عقد موحد الوجة 8705 الجديد", "العقد الموحد بالوجه"], ["عقد موحد تبوك الجديد 8705", "العقد الموحد بتبوك"], ["عقد موحد حقل الجديد 8705", "العقد الموحد بحقل"], ["عقد موحد خليص الجديد 8661", "العقد الموحد بخليص"], ["عقد موحد ضبا الجديد 8705", "العقد الموحد بضبا"], ["عقد موحد عسير 8840 الجديد 2016", "العقد الموحد بعسير"], ["عقد موحد محايل عسير الجديد 8840", "العقد الموحد بمحايل عسير"], ["عقد موحد مكة الجديد 8661", "العقد الموحد بمكة المكرمة"], ["العقد الموحد بالباحه 14970 ( ص الباحه 22 : 25 )", "صيانة العقد الموحد بالباحة"], ["العقد الموحد بتبوك الجديد ( ص تبوك )", "صيانة العقد الموحد بتبوك"], ["العقد الموحد بعسير 14962( ص عسير )", "صيانة العقد الموحد بعسير"], ["العقد الموحد بمكه الجديد ( ص مكه )", "صيانة العقد الموحد بمكة المكرمة"], ["قراء عدادات الباحه 4400014970", "قراء عدادات الباحة"], ["عقد موحد قراء عدادات الباحه", "قراء عدادات الباحة"], ["قراء عدادات موحد تبوك", "قراء عدادات تبوك"], ["عقد موحد مكة- قراء عدادات", "قراء عدادات مكة المكرمة"], ["العقد الموحد بالمخواه 4400014970", "العقد الموحد بالباحة"], ["العقد الموحد بالقنفده 14970", "العقد الموحد بالباحة"], ["صيانة الباحه العقد الجديد رقم 6648", "صيانة العقد الموحد بالباحة"]]
+DEFAULT_CC_MAP = [["مركز التكلفة العام بالادارة", "الادارة العامة"], ["العقد الموحد بابها", "العقد الموحد بابها"], ["العقد الموحد الباحه 4400014970", "العقد الموحد بالباحة"], ["عقد موحد الباحة 8867 الجديد 2016", "العقد الموحد بالباحة"], ["عقد موحد الرياض الجديد 8546", "العقد الموحد بالرياض"], ["عقد موحد أملج الجديد 8705", "العقد الموحد بأملج"], ["عقد موحد المجاردة الجديد 8840", "العقد الموحد بالمجاردة"], ["عقد موحد الوجة 8705 الجديد", "العقد الموحد بالوجه"], ["عقد موحد تبوك الجديد 8705", "العقد الموحد بتبوك"], ["عقد موحد حقل الجديد 8705", "العقد الموحد بحقل"], ["عقد موحد خليص الجديد 8661", "العقد الموحد بخليص"], ["عقد موحد ضبا الجديد 8705", "العقد الموحد بضبا"], ["عقد موحد عسير 8840 الجديد 2016", "العقد الموحد بعسير"], ["عقد موحد محايل عسير الجديد 8840", "العقد الموحد بمحايل عسير"], ["عقد موحد مكة الجديد 8661", "العقد الموحد بمكة المكرمة"], ["العقد الموحد بالباحه 14970 ( ص الباحه 22 : 25 )", "صيانة العقد الموحد بالباحة"], ["العقد الموحد بتبوك الجديد ( ص تبوك )", "صيانة العقد الموحد بتبوك"], ["العقد الموحد بعسير 14962( ص عسير )", "صيانة العقد الموحد بعسير"], ["العقد الموحد بمكه الجديد ( ص مكه )", "صيانة العقد الموحد بمكة المكرمة"], ["قراء عدادات الباحه 4400014970", "قراء عدادات الباحة"], ["عقد موحد قراء عدادات الباحه", "قراء عدادات الباحة"], ["قراء عدادات موحد تبوك", "قراء عدادات تبوك"], ["عقد موحد مكة- قراء عدادات", "قراء عدادات مكة المكرمة"], ["العقد الموحد بالمخواه 4400014970", "العقد الموحد بالباحة"], ["العقد الموحد بالقنفده 14970", "العقد الموحد بالباحة"], ["صيانة الباحه العقد الجديد رقم 6648", "صيانة العقد الموحد بالباحة"]]
 
 
 def main_of(display):
@@ -79,6 +81,34 @@ def cc_resolve(text, ccpairs, cache):
     cache[text] = (best, main)
     return best, main
 
+
+EXP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_exp.csv")
+EXP_COLS = ["الشهر", "مركز التكلفة", "كود الحساب", "المبلغ"]
+DEP_ITEM = "الاستهلاك (غير نقدي)"
+PROVISION_ITEMS = ["مستحقات الإجازات", "مستحقات نهاية الخدمة", "مكافآت وتذاكر العاملين"]
+ALL_SITES = "الشركة (بالكامل)"
+
+# قواعد ربط حسابات المصاريف (قائمة الدخل) ببنود التقرير: بداية كود الحساب ← البند. أول قاعدة تنطبق تحسم.
+DEFAULT_EXP_RULES = [
+    ["5010201006", "مستحقات الإجازات"], ["5010201007", "مستحقات نهاية الخدمة"], ["5010201008", "مكافآت وتذاكر العاملين"],
+    ["5010202009", "مكافآت وتذاكر العاملين"], ["5020101003", "مستحقات الإجازات"], ["5020101004", "مستحقات نهاية الخدمة"],
+    ["5020101005", "مكافآت وتذاكر العاملين"], ["5020102005", "مكافآت وتذاكر العاملين"],
+    ["5010201", "الرواتب والأجور والبدلات"], ["5010202004", "تجديد بوالص التأمين"], ["5010202", "مصاريف تشغيلية وإدارية أخرى"],
+    ["5010203006", "التأمينات الاجتماعية"], ["5010203013", "رسوم تصاريح الحفر والإخلاء والبلديات"],
+    ["5010203010", "مصاريف تشغيلية وإدارية أخرى"], ["5010203011", "مصاريف تشغيلية وإدارية أخرى"],
+    ["5010203012", "مصاريف تشغيلية وإدارية أخرى"], ["5010203014", "مصاريف تشغيلية وإدارية أخرى"],
+    ["5010203", "إقامات وتأشيرات ورسوم حكومية"], ["50101", "مشتريات مواد تشغيلية وموردون"], ["50103", "دفعات لمقاولي الباطن"],
+    ["5010404001", "تجديد بوالص التأمين"], ["5010404002", "تجديد بوالص التأمين"], ["50104", "تشغيل وصيانة السيارات والمعدات"],
+    ["5011001", "إيجارات ومرافق"], ["5011002", "إيجارات ومرافق"], ["5011003", "مشتريات مواد تشغيلية وموردون"],
+    ["5011004", "مشتريات مواد تشغيلية وموردون"], ["5011006", "رسوم تصاريح الحفر والإخلاء والبلديات"],
+    ["5011007002", "إيجارات ومرافق"], ["5011007003", "إيجارات ومرافق"], ["5011007004", "إيجارات ومرافق"],
+    ["5011007006", "إيجارات ومرافق"], ["5011007007", "إيجارات ومرافق"], ["50110", "مصاريف تشغيلية وإدارية أخرى"],
+    ["5020101", "الرواتب والأجور والبدلات"], ["5020102", "الرواتب والأجور والبدلات"], ["5020103", "التأمينات الاجتماعية"],
+    ["5020203001", "تجديد بوالص التأمين"], ["5020201", "تشغيل وصيانة السيارات والمعدات"], ["5020202", "تشغيل وصيانة السيارات والمعدات"],
+    ["5020203", "تشغيل وصيانة السيارات والمعدات"], ["5020301", "إيجارات ومرافق"], ["5020303003", "إيجارات ومرافق"],
+    ["5020303016", "الزكاة وضريبة الدخل (شاملة الدفعات المعجلة)"], ["502", "مصاريف تشغيلية وإدارية أخرى"],
+    ["5050", "عمولات ومصاريف بنكية"], ["51", DEP_ITEM],
+]
 
 # ---------------- جدول البنود (المجموعة، الترتيب) ----------------
 # المجموعة: ت = تشغيلية، س = استثمارية، م = تمويلية، ع = عهد وتحويلات
@@ -488,7 +518,11 @@ def detect_ref(raw):
     wb = _open_xlsx(raw)
     if "تفصيلي" in wb.sheetnames:
         return "عميل"
-    hdr = [str(c.value or "") for c in wb.active[1]]
+    ws0 = wb.active
+    for rw in list(ws0.iter_rows(min_row=1, max_row=4, values_only=True)):
+        if any(str(x or "").strip() == "تاريخ الشراء" for x in rw):
+            return "أصل"
+    hdr = [str(c.value or "") for c in ws0[1]]
     return "نشاط" if any("الاعمال" in h for h in hdr) else "مورد"
 
 
@@ -538,6 +572,156 @@ def _lookup(maps, date, amt):
     exact, monthly = maps
     a = round(abs(float(amt)), 2)
     return exact.get((date, a)) or monthly.get((str(date)[:7], a)) or ""
+
+
+def _cc_of(rest):
+    cands = [x for x in rest[1:] if x not in ADMIN_UNITS and ("عقد" in x or "موحد" in x or "مركز" in x or "قراء" in x)]
+    return max(cands, key=len) if cands else ""
+
+
+def expense_lines(df):
+    """مصاريف قائمة الدخل (حسابات 5…) من التقرير نفسه، مجمَّعة حسب الشهر ومركز التكلفة والحساب (استحقاق وليس نقداً)."""
+    if df is None or len(df) == 0:
+        return pd.DataFrame(columns=EXP_COLS)
+    e = df[df["code"].str.startswith("5")].copy()
+    if not len(e):
+        return pd.DataFrame(columns=EXP_COLS)
+    e["الشهر"] = e["date"].dt.strftime("%Y-%m")
+    e["مركز التكلفة"] = e["rest"].map(_cc_of)
+    e["المبلغ"] = e["debit"] - e["credit"]
+    g = e.groupby(["الشهر", "مركز التكلفة", "code"], as_index=False)["المبلغ"].sum().rename(columns={"code": "كود الحساب"})
+    g["المبلغ"] = g["المبلغ"].round(2)
+    return g[EXP_COLS]
+
+
+def _load_exp():
+    try:
+        if os.path.exists(EXP_FILE):
+            d = pd.read_csv(EXP_FILE, encoding="utf-8-sig", dtype={"كود الحساب": str}).fillna("")
+            d["المبلغ"] = pd.to_numeric(d["المبلغ"], errors="coerce").fillna(0.0)
+            return d[EXP_COLS]
+    except Exception:
+        pass
+    return pd.DataFrame(columns=EXP_COLS)
+
+
+def _save_exp(d):
+    try:
+        d.to_csv(EXP_FILE, index=False, encoding="utf-8-sig")
+    except Exception:
+        pass
+
+
+def _exp_item(code, rules):
+    for pre, item in rules:
+        if str(code).startswith(str(pre)):
+            return item
+    return "مصاريف تشغيلية وإدارية أخرى"
+
+
+def expenses_classified():
+    """مصاريف قائمة الدخل بعد ربطها بالبند والعقد."""
+    ss = st.session_state
+    EX = ss.get("cf_exp", pd.DataFrame(columns=EXP_COLS))
+    if len(EX) == 0:
+        return EX.assign(البند=[], العقد=[])
+    rules = ss.get("cf_erules", pd.DataFrame(DEFAULT_EXP_RULES, columns=["البادئة", "البند"])).values.tolist()
+    ccdf = ss.get("cf_cc", pd.DataFrame(DEFAULT_CC_MAP, columns=["مركز التكلفة", "المسمى المطلوب"]))
+    ccpairs = [(_nm(a), str(b).strip()) for a, b in ccdf.values if str(a).strip()]
+    cache = {}
+    X = EX.copy()
+    X["المبلغ"] = pd.to_numeric(X["المبلغ"], errors="coerce").fillna(0.0)
+
+    def _ctr(t):
+        t = str(t)
+        _, m = cc_resolve(t, ccpairs, cache)
+        if m:
+            return m
+        c = contract_of(t)
+        if c != NO_CONTRACT:
+            return c
+        n = _nm(t)
+        return "الإدارة" if ("الاداره" in n or "مركزالتكلفةال" in n) else NO_CONTRACT
+    X["العقد"] = X["مركز التكلفة"].map(_ctr)
+    X["البند"] = X["كود الحساب"].map(lambda c: _exp_item(c, rules))
+    return X
+
+
+def site_expenses(C_all, X, months_all, sites, excl_dep=True):
+    """مصاريف التشغيل حسب قائمة الدخل (بند × شهر) لمجموعة عقود. المخصصات (إجازات/نهاية خدمة/مكافآت وتذاكر): لكل عقد المصروف
+    التراكمي = الأكبر من المصروف المحمَّل والمدفوع نقداً لنفس العقد، حتى لا يتكرر الأثر؛ ويُوزَّع على الأشهر بالفروق التراكمية."""
+    out = {}
+    for ctr in sites:
+        Xc = X[X["العقد"] == ctr]
+        if excl_dep:
+            Xc = Xc[Xc["البند"] != DEP_ITEM]
+        pv = Xc.pivot_table(index="البند", columns="الشهر", values="المبلغ", aggfunc="sum", fill_value=0.0) if len(Xc) else pd.DataFrame()
+        for it in set(pv.index if len(pv) else []) | set(PROVISION_ITEMS):
+            acc = np.array([float(pv.loc[it, m]) if (len(pv) and it in pv.index and m in pv.columns) else 0.0 for m in months_all])
+            if it in PROVISION_ITEMS:
+                cash = np.array([-float(C_all[(C_all["العقد"] == ctr) & (C_all["البند"] == it) & (C_all["الشهر"] == m)]["الأثر النقدي"].sum()) for m in months_all])
+                cum = np.maximum(np.cumsum(acc), np.cumsum(cash))
+                acc = np.diff(np.concatenate([[0.0], cum]))
+            if np.abs(acc).sum() < 0.005:
+                continue
+            cur = out.setdefault(it, np.zeros(len(months_all)))
+            out[it] = cur + acc
+    return pd.DataFrame(out, index=months_all).T if out else pd.DataFrame(columns=months_all)
+
+
+ASSET_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_assets.csv")
+ASSET_COLS = ["الشهر", "تاريخ الشراء", "الموقع", "بيان الأصل", "التكلفة"]
+
+
+def parse_assets(raw):
+    """سجل الأصول الثابتة: أصول اشتُريت في 2026 مع الموقع (مركز التكلفة) والتكلفة (اجمالي التكلفة)."""
+    ws = _open_xlsx(raw).active
+    rows = list(ws.iter_rows(values_only=True))
+    hi = next((i for i, r in enumerate(rows[:10]) if any(str(x or "").strip() == "تاريخ الشراء" for x in r)), None)
+    if hi is None:
+        return pd.DataFrame(columns=ASSET_COLS)
+    h = [str(x or "").strip() for x in rows[hi]]
+    ix = {k: h.index(k) for k in ("تاريخ الشراء", "الموقع", "بيان الاصل", "اجمالي التكلفة") if k in h}
+    out = []
+    for r in rows[hi + 1:]:
+        d = r[ix["تاريخ الشراء"]] if len(r) > ix["تاريخ الشراء"] else None
+        if isinstance(d, (dt.datetime, dt.date)) and d.year == 2026:
+            out.append([pd.Timestamp(d).strftime("%Y-%m"), pd.Timestamp(d).strftime("%Y-%m-%d"), str(r[ix["الموقع"]] or ""), str(r[ix["بيان الاصل"]] or "")[:80], round(_num(r[ix["اجمالي التكلفة"]]), 2)])
+    return pd.DataFrame(out, columns=ASSET_COLS)
+
+
+def _load_assets():
+    try:
+        if os.path.exists(ASSET_FILE):
+            d = pd.read_csv(ASSET_FILE, encoding="utf-8-sig").fillna("")
+            d["التكلفة"] = pd.to_numeric(d["التكلفة"], errors="coerce").fillna(0.0)
+            return d[ASSET_COLS]
+    except Exception:
+        pass
+    return pd.DataFrame(columns=ASSET_COLS)
+
+
+def assets_classified():
+    A = st.session_state.get("cf_assets", pd.DataFrame(columns=ASSET_COLS))
+    if len(A) == 0:
+        return A.assign(العقد=[])
+    ccdf = st.session_state.get("cf_cc", pd.DataFrame(DEFAULT_CC_MAP, columns=["مركز التكلفة", "المسمى المطلوب"]))
+    ccpairs = [(_nm(a), str(b).strip()) for a, b in ccdf.values if str(a).strip()]
+    cache = {}
+
+    def _ctr(t):
+        t = str(t)
+        _, m = cc_resolve(t, ccpairs, cache)
+        if m:
+            return m
+        c = contract_of(t)
+        if c != NO_CONTRACT:
+            return c
+        n = _nm(t)
+        return "الإدارة" if ("الاداره" in n or "مركزالتكلفةال" in n) else NO_CONTRACT
+    X = A.copy()
+    X["العقد"] = X["الموقع"].map(_ctr)
+    return X
 
 
 # ---------------- التصنيف ----------------
@@ -651,12 +835,25 @@ def _load_vrules():
     return pd.DataFrame(DEFAULT_VENDOR_RULES, columns=["النمط", "البند"])
 
 
+def _load_erules():
+    try:
+        if os.path.exists(RULES_FILE):
+            j = json.load(open(RULES_FILE, encoding="utf-8"))
+            if "exp" in j and j.get("ver", 0) >= RULES_VERSION:
+                return pd.DataFrame(j["exp"], columns=["البادئة", "البند"])
+    except Exception:
+        pass
+    return pd.DataFrame(DEFAULT_EXP_RULES, columns=["البادئة", "البند"])
+
+
 def _load_cc():
     try:
         if os.path.exists(RULES_FILE):
             j = json.load(open(RULES_FILE, encoding="utf-8"))
             if "cc" in j:
-                return pd.DataFrame(j["cc"], columns=["مركز التكلفة", "المسمى المطلوب"])
+                d = pd.DataFrame(j["cc"], columns=["مركز التكلفة", "المسمى المطلوب"])
+                d["المسمى المطلوب"] = d["المسمى المطلوب"].astype(str).str.strip().replace({"العقد الموحد بالمج": "العقد الموحد بأملج"})
+                return d
     except Exception:
         pass
     return pd.DataFrame(DEFAULT_CC_MAP, columns=["مركز التكلفة", "المسمى المطلوب"])
@@ -693,7 +890,7 @@ def _load_arules():
 def _save_rules(a, d, v=None):
     try:
         v = v if v is not None else st.session_state.get("cf_vrules", _load_vrules())
-        json.dump({"ver": RULES_VERSION, "acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist(), "open": float(st.session_state.get("cf_open", DEFAULT_OPEN)), "cc": st.session_state.get("cf_cc", _load_cc()).values.tolist(), "act": st.session_state.get("cf_arules", _load_arules()).values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump({"ver": RULES_VERSION, "acct": a.values.tolist(), "desc": d.values.tolist(), "vend": v.values.tolist(), "open": float(st.session_state.get("cf_open", DEFAULT_OPEN)), "cc": st.session_state.get("cf_cc", _load_cc()).values.tolist(), "exp": st.session_state.get("cf_erules", _load_erules()).values.tolist(), "act": st.session_state.get("cf_arules", _load_arules()).values.tolist()}, open(RULES_FILE, "w", encoding="utf-8"), ensure_ascii=False)
     except Exception:
         pass
 
@@ -706,6 +903,12 @@ def _state():
         ss["cf_rules"] = _load_rules()
     if "cf_refs" not in ss:
         ss["cf_refs"] = _load_refs()
+    if "cf_assets" not in ss:
+        ss["cf_assets"] = _load_assets()
+    if "cf_exp" not in ss:
+        ss["cf_exp"] = _load_exp()
+    if "cf_erules" not in ss:
+        ss["cf_erules"] = _load_erules()
     if "cf_cc" not in ss:
         ss["cf_cc"] = _load_cc()
     if "cf_ovr" not in ss:
@@ -831,41 +1034,68 @@ def _matrix_rows(C, cols):
     return rows
 
 
+def _apply_override(keys, item, ctr):
+    ov = st.session_state["cf_ovr"]
+    ov = ov[~ov["المفتاح"].isin(keys)]
+    add = pd.DataFrame([[k, item, ctr] for k in keys], columns=OVR_COLS)
+    st.session_state["cf_ovr"] = pd.concat([ov, add], ignore_index=True)
+    st.session_state["cf_ovr_ver"] = st.session_state.get("cf_ovr_ver", 0) + 1
+    _save_ovr(st.session_state["cf_ovr"])
+
+
 def _edit_lines(D, key, unlocked, limit=150):
-    """جدول سطور قابل للتعديل: التصنيف والعقد لكل سطر من قائمة منسدلة، وتُحفظ التعديلات اليدوية وتُطبَّق فوراً."""
+    """جدول سطور قابل للتعديل: التصنيف والعقد لكل سطر من قائمة منسدلة (أو تعديل جماعي)، وتُحفظ التعديلات وتُطبَّق فوراً."""
     D = D.head(limit)
-    E = D[["_k", "البيان", "التاريخ", "الحساب المقابل", "البند", "العقد", "الأثر النقدي"]].rename(columns={"البند": "التصنيف"}).reset_index(drop=True)
+    E = D[["_k", "العقد", "التصنيف" if "التصنيف" in D.columns else "البند", "الأثر النقدي", "البيان", "التاريخ", "الحساب المقابل"]].copy()
+    E.columns = ["_k", "العقد", "التصنيف", "الأثر النقدي", "البيان", "التاريخ", "الحساب المقابل"]
+    E = E.reset_index(drop=True)
     opts_i = [i for i, _ in ITEMS]
     ver = st.session_state.get("cf_ovr_ver", 0)
-    ed = st.data_editor(E, hide_index=True, use_container_width=True, key=f"{key}_{ver}", num_rows="fixed",
-                        disabled=True if not unlocked else ["البيان", "التاريخ", "الحساب المقابل", "الأثر النقدي"],
-                        column_order=["البيان", "التاريخ", "الحساب المقابل", "التصنيف", "العقد", "الأثر النقدي"],
-                        column_config={"التصنيف": st.column_config.SelectboxColumn("التصنيف", options=opts_i, required=True, width="large"),
-                                       "العقد": st.column_config.SelectboxColumn("العقد", options=MAIN_OPTS, required=True),
-                                       "الأثر النقدي": st.column_config.NumberColumn("الأثر النقدي", format="%.0f")})
-    if not unlocked or len(ed) != len(E):
-        return
-    base = D[["_k", "البند0", "العقد0"]].reset_index(drop=True)
-    ov = st.session_state["cf_ovr"].set_index("المفتاح") if len(st.session_state["cf_ovr"]) else pd.DataFrame(columns=["البند", "العقد"])
-    ov = ov.copy()
-    changed = False
-    for i in range(len(E)):
-        if ed.loc[i, "التصنيف"] != E.loc[i, "التصنيف"] or ed.loc[i, "العقد"] != E.loc[i, "العقد"]:
-            k = E.loc[i, "_k"]
-            if ed.loc[i, "التصنيف"] == base.loc[i, "البند0"] and ed.loc[i, "العقد"] == base.loc[i, "العقد0"]:
-                if k in ov.index:
-                    ov = ov.drop(k)
-            else:
-                ov.loc[k] = [ed.loc[i, "التصنيف"], ed.loc[i, "العقد"]]
-            changed = True
-    if changed:
-        new = ov.reset_index().rename(columns={"index": "المفتاح"})
-        if "المفتاح" not in new.columns:
+    try:
+        box = st.container(key="cf_grid_" + key)
+    except TypeError:
+        box = st.container()
+    with box:
+        ed = st.data_editor(E, hide_index=True, use_container_width=True, key=f"{key}_{ver}", num_rows="fixed",
+                            disabled=True if not unlocked else ["البيان", "التاريخ", "الحساب المقابل", "الأثر النقدي"],
+                            column_order=["التصنيف", "العقد", "الأثر النقدي", "البيان", "التاريخ", "الحساب المقابل"],
+                            column_config={"التصنيف": st.column_config.SelectboxColumn("التصنيف", options=opts_i, required=True, width=260),
+                                           "العقد": st.column_config.SelectboxColumn("العقد", options=MAIN_OPTS, required=True, width=190),
+                                           "الأثر النقدي": st.column_config.NumberColumn("الأثر النقدي", format="%.0f", width=110),
+                                           "البيان": st.column_config.TextColumn("البيان", width=380),
+                                           "التاريخ": st.column_config.TextColumn("التاريخ", width=100),
+                                           "الحساب المقابل": st.column_config.TextColumn("الحساب المقابل", width=190)})
+    if unlocked and len(ed) == len(E):
+        base = D[["_k", "البند0", "العقد0"]].reset_index(drop=True)
+        ov = st.session_state["cf_ovr"].set_index("المفتاح") if len(st.session_state["cf_ovr"]) else pd.DataFrame(columns=["البند", "العقد"])
+        ov = ov.copy()
+        changed = False
+        for i in range(len(E)):
+            if ed.loc[i, "التصنيف"] != E.loc[i, "التصنيف"] or ed.loc[i, "العقد"] != E.loc[i, "العقد"]:
+                k = E.loc[i, "_k"]
+                if ed.loc[i, "التصنيف"] == base.loc[i, "البند0"] and ed.loc[i, "العقد"] == base.loc[i, "العقد0"]:
+                    if k in ov.index:
+                        ov = ov.drop(k)
+                else:
+                    ov.loc[k] = [ed.loc[i, "التصنيف"], ed.loc[i, "العقد"]]
+                changed = True
+        if changed:
+            new = ov.reset_index()
             new = new.rename(columns={new.columns[0]: "المفتاح"})
-        st.session_state["cf_ovr"] = new[OVR_COLS]
-        st.session_state["cf_ovr_ver"] = ver + 1
-        _save_ovr(st.session_state["cf_ovr"])
-        st.rerun()
+            st.session_state["cf_ovr"] = new[OVR_COLS]
+            st.session_state["cf_ovr_ver"] = ver + 1
+            _save_ovr(st.session_state["cf_ovr"])
+            st.rerun()
+    if unlocked and len(E):
+        with st.expander("تعديل جماعي: اختر عدة سطور وعيّن لها تصنيفاً وعقداً دفعة واحدة"):
+            lab = {r["_k"]: f"{r['البيان'][:50]} | {r['التاريخ']} | {r['الأثر النقدي']:,.0f}" for _, r in E.iterrows()}
+            pick = st.multiselect("السطور", list(lab.keys()), format_func=lambda k: lab[k], key=f"{key}_bp_{ver}")
+            c1, c2 = st.columns(2)
+            ni = c1.selectbox("التصنيف الجديد", opts_i, key=f"{key}_bi_{ver}")
+            nc = c2.selectbox("العقد الجديد", MAIN_OPTS, key=f"{key}_bc_{ver}")
+            if pick and st.button(f"تطبيق على {len(pick)} سطراً", key=f"{key}_bb_{ver}"):
+                _apply_override(pick, ni, nc)
+                st.rerun()
 
 
 def render_cashflow(ctx, build_styled_table):
@@ -899,6 +1129,14 @@ def render_cashflow(ctx, build_styled_table):
                     done.add(h)
                     st.success(f"{f.name}: استُعيدت {len(_o)} تعديلاً يدوياً.")
                     continue
+                if f.name.lower().endswith(".csv") and "كود الحساب" in raw[:300].decode("utf-8-sig", "ignore") and "الأثر النقدي" not in raw[:300].decode("utf-8-sig", "ignore"):
+                    _e = pd.read_csv(io.BytesIO(raw), encoding="utf-8-sig", dtype={"كود الحساب": str}).fillna("")[EXP_COLS]
+                    _kx = st.session_state["cf_exp"]
+                    st.session_state["cf_exp"] = pd.concat([_kx[~_kx["الشهر"].isin(set(_e["الشهر"]))], _e], ignore_index=True)
+                    _save_exp(st.session_state["cf_exp"])
+                    done.add(h)
+                    st.success(f"{f.name}: استُعيدت مصاريف قائمة الدخل للأشهر {', '.join(sorted(set(_e['الشهر'])))}.")
+                    continue
                 if f.name.lower().endswith(".csv"):
                     res = pd.read_csv(io.BytesIO(raw), encoding="utf-8-sig", dtype={"كود الحساب": str, "القيد": str}).fillna("")[LINE_COLS]
                     res["الأثر النقدي"] = pd.to_numeric(res["الأثر النقدي"], errors="coerce").fillna(0.0)
@@ -906,6 +1144,11 @@ def render_cashflow(ctx, build_styled_table):
                 else:
                     df = parse_report(raw)
                     res, info = bank_effects(df)
+                    ex = expense_lines(df)
+                    if len(ex):
+                        _kx = st.session_state["cf_exp"]
+                        st.session_state["cf_exp"] = pd.concat([_kx[~_kx["الشهر"].isin(set(ex["الشهر"]))], ex], ignore_index=True)
+                        _save_exp(st.session_state["cf_exp"])
                 months = set(res["الشهر"].unique())
                 keep = st.session_state["cf_lines"]
                 keep = keep[~keep["الشهر"].isin(months)]
@@ -929,6 +1172,16 @@ def render_cashflow(ctx, build_styled_table):
                 continue
             try:
                 kind = detect_ref(raw)
+                if kind == "أصل":
+                    _a = parse_assets(raw)
+                    st.session_state["cf_assets"] = _a
+                    try:
+                        _a.to_csv(ASSET_FILE, index=False, encoding="utf-8-sig")
+                    except Exception:
+                        pass
+                    done.add(h)
+                    st.success(f"{f.name}: سجل الأصول، {len(_a)} أصلاً مشترى في 2026 بتكلفة {_a['التكلفة'].sum():,.0f}.")
+                    continue
                 new = parse_customers(raw) if kind == "عميل" else (parse_activities(raw) if kind == "نشاط" else parse_vendors(raw))
                 old = st.session_state["cf_refs"]
                 st.session_state["cf_refs"] = pd.concat([old[old["النوع"] != kind], new], ignore_index=True)
@@ -949,6 +1202,12 @@ def render_cashflow(ctx, build_styled_table):
         _c1, _c2 = st.columns(2)
         _c1.download_button("⬇️ نسخة احتياطية من البيانات المحمّلة (CSV)", data=_L.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
                             file_name="cashflow_lines_backup.csv", mime="text/csv", key="cf_bk")
+        _xd = st.session_state.get("cf_exp", pd.DataFrame(columns=EXP_COLS))
+        if len(_xd):
+            st.download_button(f"⬇️ نسخة احتياطية من مصاريف قائمة الدخل ({', '.join(sorted(set(_xd['الشهر'])))})", data=_xd.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                               file_name="cashflow_exp_backup.csv", mime="text/csv", key="cf_bk3")
+        else:
+            st.caption("مصاريف قائمة الدخل غير محمّلة: أعد رفع ملفات المعاملات الأصلية (Excel) لتُستخرج المصاريف حسب مراكز التكلفة.")
         _ovd = st.session_state.get("cf_ovr", pd.DataFrame(columns=OVR_COLS))
         if len(_ovd):
             st.download_button(f"⬇️ نسخة احتياطية من التعديلات اليدوية ({len(_ovd)} سطراً)", data=_ovd.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
@@ -1105,24 +1364,62 @@ def render_cashflow(ctx, build_styled_table):
         st.caption(f"{len(NR)} سطراً بإجمالي {NR['الأثر النقدي'].sum():,.0f}. ارفع تقرير العملاء لتحديدها تلقائياً بمطابقة التاريخ والمبلغ.")
         _edit_lines(NR, "cf_ed_nr", unlocked)
 
-    # ---------- تقرير حسب العقد ----------
-    st.markdown('<div class="cf-title">تقرير حسب العقد: التحصيلات والمصروفات</div>', unsafe_allow_html=True)
-    st.caption("يُنسب كل سطر إلى العقد من مركز تكلفته (حسب جدول التسمية)، وما لا مركز تكلفة محدداً له يظهر في «غير محدد» ويمكن توجيهه من الجداول القابلة للتعديل.")
-    sm = []
-    for ctr in MAIN_OPTS:
-        X = C[C["العقد"] == ctr]
-        if not len(X):
-            continue
-        col_ = float(X[X["البند"] == "تحصيلات من العملاء"]["الأثر النقدي"].sum())
-        opx = float(X[X["المجموعة"].isin(["ت-داخل", "ت-خارج"])]["الأثر النقدي"].sum())
-        pay = float(X[X["المجموعة"] == "ت-خارج"]["الأثر النقدي"].sum())
-        oth = float(X[~X["المجموعة"].isin(["ت-داخل", "ت-خارج"])]["الأثر النقدي"].sum())
-        sm.append(("item", ctr, [col_, pay, opx, oth, opx + oth]))
-    if sm:
-        sm.append(("total", "الإجمالي", [sum(r[2][j] for r in sm) for j in range(5)]))
-        st.table(build_styled_table(sm, ["العقد", "تحصيلات العملاء", "المدفوعات التشغيلية", "صافي التشغيلي", "استثماري وتمويلي وعهد", "الصافي"]))
-        ctr_sel = st.selectbox("اختر عقداً لعرض تفصيله الشهري", [r[1] for r in sm[:-1]], key="cf_ctr")
-        st.table(build_styled_table(_matrix_rows(C[C["العقد"] == ctr_sel], cols), ["البند"] + cols + ["الإجمالي"]))
+    # ---------- تقرير التشغيل حسب العقد ----------
+    st.markdown('<div class="cf-title">تقرير التشغيل حسب العقد: التحصيلات (نقدي) والمصاريف (حسب قائمة الدخل)</div>', unsafe_allow_html=True)
+    X_all = expenses_classified()
+    if not len(X_all):
+        st.info("لحساب مصاريف كل عقد حسب قائمة الدخل أعد رفع ملفات المعاملات الأصلية (Excel) لتُستخرج المصاريف حسب مراكز التكلفة؛ فدفع المصروف لا يعني تحمّل العقد له.")
+    else:
+        st.caption("المصروف يُنسب للعقد من مركز تكلفته في قيد المصروف نفسه وليس من جهة الدفع. المخصصات (إجازات، نهاية خدمة، مكافآت وتذاكر) تُحتسب لكل عقد بالأكبر من المصروف المحمَّل والمدفوع نقداً بلا تكرار.")
+        excl = st.checkbox("استبعاد الاستهلاك (غير نقدي)", value=True, key="cf_excl_dep")
+        sites_all = CONTRACT_OPTS + [NO_CONTRACT]
+        AS = assets_classified()
+        if not len(AS):
+            st.caption("لربط مشتريات الأصول الثابتة بالعقود ارفع سجل الأصول (Excel) في خانة التقارير المرجعية.")
+        smx = {}
+        for ctr in sites_all:
+            ex_c = site_expenses(C_all, X_all, months_all, [ctr], excl)
+            col_c = {m: float(C_all[(C_all["العقد"] == ctr) & (C_all["البند"] == "تحصيلات من العملاء") & (C_all["الشهر"] == m)]["الأثر النقدي"].sum()) for m in months_all}
+            smx[ctr] = (col_c, ex_c)
+        sm = []
+        for ctr in sites_all:
+            col_c, ex_c = smx[ctr]
+            c_ = sum(col_c[m] for m in sel)
+            e_ = float(ex_c[sel].values.sum()) if len(ex_c) else 0.0
+            a_ = float(AS[(AS["العقد"] == ctr) & AS["الشهر"].isin(sel)]["التكلفة"].sum()) if len(AS) else 0.0
+            if abs(c_) + abs(e_) + abs(a_) < 0.5:
+                continue
+            sm.append(("item", ctr, [c_, e_, c_ - e_, a_]))
+        if sm:
+            sm.append(("total", ALL_SITES, [sum(r[2][j] for r in sm) for j in range(4)]))
+            st.table(build_styled_table(sm, ["العقد", "تحصيلات العملاء (نقدي)", "المصاريف التشغيلية (قائمة الدخل)", "صافي التشغيل", "مشتريات أصول ثابتة (سجل الأصول)"]))
+        pick = st.selectbox("اختر الشركة بالكامل أو عقداً لعرض تفصيله الشهري", [ALL_SITES] + [r[1] for r in sm[:-1]], key="cf_ctr")
+        scope = sites_all if pick == ALL_SITES else [pick]
+        col_t = np.array([sum(smx[c][0][m] for c in scope) for m in sel])
+        ex_t = site_expenses(C_all, X_all, months_all, scope, excl)
+        rws = [("section", "التحصيلات من العملاء (نقدي)", []), ("item", "تحصيلات من العملاء", list(col_t) + [float(col_t.sum())])]
+        tot_e = np.zeros(len(sel))
+        if len(ex_t):
+            rws.append(("section", "المصاريف التشغيلية حسب قائمة الدخل", []))
+            order = [i for i, _ in ITEMS] + [DEP_ITEM]
+            for it in sorted(ex_t.index, key=lambda i: order.index(i) if i in order else 99):
+                v = [float(ex_t.loc[it, m]) for m in sel]
+                rws.append(("item", it, [-x for x in v] + [-sum(v)]))
+                tot_e += np.array(v)
+        rws.append(("subtotal", "إجمالي المصاريف التشغيلية", list(-tot_e) + [float(-tot_e.sum())]))
+        rws.append(("total", "صافي التشغيل (تحصيلات − مصاريف)", list(col_t - tot_e) + [float((col_t - tot_e).sum())]))
+        if len(AS):
+            AS_s = AS[AS["العقد"].isin(scope)]
+            if len(AS_s):
+                rws.append(("section", "الاستثمار: مشتريات الأصول الثابتة حسب تاريخ الشراء في سجل الأصول", []))
+                av = [float(AS_s[AS_s["الشهر"] == m]["التكلفة"].sum()) for m in sel]
+                rws.append(("item", "مشتريات أصول ثابتة", [-x for x in av] + [-sum(av)]))
+        st.table(build_styled_table(rws, ["البند"] + sel + ["الإجمالي"]))
+        if pick != ALL_SITES:
+            cash_rows = _matrix_rows(C_all[(C_all["العقد"] == pick) & C_all["الشهر"].isin(sel) & C_all["المجموعة"].isin(["س", "م", "ع"])], sel)
+            if len(cash_rows) > 2:
+                st.caption("مدفوعات استثمارية وتمويلية وعهد منسوبة نقداً لهذا العقد (للعلم، خارج صافي التشغيل أعلاه):")
+                st.table(build_styled_table(cash_rows, ["البند"] + sel + ["الإجمالي"]))
 
     # ---------- الدفعات المعجلة الضريبية ----------
     st.markdown('<div class="cf-title">الدفعات المعجلة الضريبية 2026 (إشعار الهيئة بتاريخ 26/03/2026)</div>', unsafe_allow_html=True)
@@ -1166,6 +1463,13 @@ def _rules_editor(rules, unlocked):
                                            "البند": st.column_config.SelectboxColumn("البند", options=items)})
         d2 = st.data_editor(dr, num_rows="dynamic", use_container_width=True, hide_index=True, key="cf_ed_desc", disabled=not unlocked,
                             column_config={"البند": st.column_config.SelectboxColumn("البند", options=items)})
+        st.caption("ربط حسابات مصاريف قائمة الدخل ببنود التقرير (بداية كود الحساب ← البند)؛ أول قاعدة تنطبق تحسم. البند «الاستهلاك (غير نقدي)» يمكن استبعاده من التقرير.")
+        er = st.session_state.get("cf_erules", pd.DataFrame(DEFAULT_EXP_RULES, columns=["البادئة", "البند"]))
+        er2 = st.data_editor(er, num_rows="dynamic", use_container_width=True, hide_index=True, key="cf_ed_exp", disabled=not unlocked,
+                             column_config={"البند": st.column_config.SelectboxColumn("البند", options=[i for i, _ in ITEMS] + [DEP_ITEM])})
+        if unlocked and not er2.dropna(how="all").equals(er):
+            st.session_state["cf_erules"] = er2.dropna(how="all")
+            _save_rules(a2, d2, st.session_state.get("cf_vrules"))
         st.caption("تسمية مراكز التكلفة في التقرير: العمود الأول كما يظهر في النظام، والثاني الاسم المطلوب (تجميع عدة مراكز تحت اسم واحد بتكرار الاسم).")
         ccm = st.session_state.get("cf_cc", pd.DataFrame(DEFAULT_CC_MAP, columns=["مركز التكلفة", "المسمى المطلوب"]))
         cc2 = st.data_editor(ccm, num_rows="dynamic", use_container_width=True, hide_index=True, key="cf_ed_cc", disabled=not unlocked)
