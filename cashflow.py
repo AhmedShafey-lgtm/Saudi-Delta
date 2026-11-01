@@ -1044,58 +1044,86 @@ def _apply_override(keys, item, ctr):
 
 
 def _edit_lines(D, key, unlocked, limit=150):
-    """جدول سطور قابل للتعديل: التصنيف والعقد لكل سطر من قائمة منسدلة (أو تعديل جماعي)، وتُحفظ التعديلات وتُطبَّق فوراً."""
-    D = D.head(limit)
-    E = D[["_k", "العقد", "التصنيف" if "التصنيف" in D.columns else "البند", "الأثر النقدي", "البيان", "التاريخ", "الحساب المقابل"]].copy()
-    E.columns = ["_k", "العقد", "التصنيف", "الأثر النقدي", "البيان", "التاريخ", "الحساب المقابل"]
-    E = E.reset_index(drop=True)
-    opts_i = [i for i, _ in ITEMS]
+    """محرّر سطور: بحث بالاسم/البيان، ثم تحديد سطور من الجدول، ثم تعيين التصنيف والعقد لها دفعة واحدة (أو إعادتها للتلقائي)."""
+    D = D.copy()
+    item_col = "التصنيف" if "التصنيف" in D.columns else "البند"
+    party = D["العميل"].astype(str) if "العميل" in D.columns else pd.Series("", index=D.index)
+    vend = D["المورد"].astype(str) if "المورد" in D.columns else pd.Series("", index=D.index)
+    D["_party"] = [c or v or a for c, v, a in zip(party, vend, D["الحساب المقابل"].astype(str))]
     ver = st.session_state.get("cf_ovr_ver", 0)
+    q = st.text_input("🔎 بحث باسم العميل/المورد أو البيان أو المبلغ", key=f"{key}_q", placeholder="اكتب جزءاً من الاسم أو البيان").strip()
+    if q:
+        hay = (D["_party"].astype(str) + " " + D["البيان"].astype(str) + " " + D["الحساب المقابل"].astype(str) + " "
+               + D["الأثر النقدي"].map(lambda v: f"{v:.0f}"))
+        D = D[hay.str.contains(re.escape(q), case=False, regex=True)]
+    total_n = len(D)
+    D = D.head(limit)
+    E = pd.DataFrame({
+        "_k": D["_k"].values,
+        "الطرف (عميل/مورد)": D["_party"].values,
+        "التاريخ": D["التاريخ"].astype(str).values,
+        "الأثر النقدي": D["الأثر النقدي"].astype(float).values,
+        "التصنيف": D[item_col].values,
+        "العقد": D["العقد"].values,
+        "البيان": D["البيان"].astype(str).values,
+    }).reset_index(drop=True)
+    if q:
+        st.caption(f"نتيجة البحث: {total_n} سطراً" + (f" (المعروض أول {limit})" if total_n > limit else ""))
+    sty = E.drop(columns=["_k"]).style.format({"الأثر النقدي": "{:,.0f}"})
     try:
         box = st.container(key="cf_grid_" + key)
     except TypeError:
         box = st.container()
+    sel = []
     with box:
-        ed = st.data_editor(E, hide_index=True, use_container_width=True, key=f"{key}_{ver}", num_rows="fixed",
-                            disabled=True if not unlocked else ["البيان", "التاريخ", "الحساب المقابل", "الأثر النقدي"],
-                            column_order=["التصنيف", "العقد", "الأثر النقدي", "البيان", "التاريخ", "الحساب المقابل"],
-                            column_config={"التصنيف": st.column_config.SelectboxColumn("التصنيف", options=opts_i, required=True, width=260),
-                                           "العقد": st.column_config.SelectboxColumn("العقد", options=MAIN_OPTS, required=True, width=190),
-                                           "الأثر النقدي": st.column_config.NumberColumn("الأثر النقدي", format="%.0f", width=110),
-                                           "البيان": st.column_config.TextColumn("البيان", width=380),
-                                           "التاريخ": st.column_config.TextColumn("التاريخ", width=100),
-                                           "الحساب المقابل": st.column_config.TextColumn("الحساب المقابل", width=190)})
-    if unlocked and len(ed) == len(E):
-        base = D[["_k", "البند0", "العقد0"]].reset_index(drop=True)
-        ov = st.session_state["cf_ovr"].set_index("المفتاح") if len(st.session_state["cf_ovr"]) else pd.DataFrame(columns=["البند", "العقد"])
-        ov = ov.copy()
-        changed = False
-        for i in range(len(E)):
-            if ed.loc[i, "التصنيف"] != E.loc[i, "التصنيف"] or ed.loc[i, "العقد"] != E.loc[i, "العقد"]:
-                k = E.loc[i, "_k"]
-                if ed.loc[i, "التصنيف"] == base.loc[i, "البند0"] and ed.loc[i, "العقد"] == base.loc[i, "العقد0"]:
-                    if k in ov.index:
-                        ov = ov.drop(k)
-                else:
-                    ov.loc[k] = [ed.loc[i, "التصنيف"], ed.loc[i, "العقد"]]
-                changed = True
-        if changed:
-            new = ov.reset_index()
-            new = new.rename(columns={new.columns[0]: "المفتاح"})
-            st.session_state["cf_ovr"] = new[OVR_COLS]
-            st.session_state["cf_ovr_ver"] = ver + 1
-            _save_ovr(st.session_state["cf_ovr"])
-            st.rerun()
-    if unlocked and len(E):
-        with st.expander("تعديل جماعي: اختر عدة سطور وعيّن لها تصنيفاً وعقداً دفعة واحدة"):
-            lab = {r["_k"]: f"{r['البيان'][:50]} | {r['التاريخ']} | {r['الأثر النقدي']:,.0f}" for _, r in E.iterrows()}
-            pick = st.multiselect("السطور", list(lab.keys()), format_func=lambda k: lab[k], key=f"{key}_bp_{ver}")
-            c1, c2 = st.columns(2)
-            ni = c1.selectbox("التصنيف الجديد", opts_i, key=f"{key}_bi_{ver}")
-            nc = c2.selectbox("العقد الجديد", MAIN_OPTS, key=f"{key}_bc_{ver}")
-            if pick and st.button(f"تطبيق على {len(pick)} سطراً", key=f"{key}_bb_{ver}"):
-                _apply_override(pick, ni, nc)
-                st.rerun()
+        try:
+            ev = st.dataframe(sty, hide_index=True, use_container_width=True, key=f"{key}_df_{ver}",
+                              on_select="rerun" if unlocked else "ignore", selection_mode="multi-row",
+                              column_config={"الطرف (عميل/مورد)": st.column_config.TextColumn(width=230),
+                                             "التاريخ": st.column_config.TextColumn(width=95),
+                                             "الأثر النقدي": st.column_config.TextColumn(width=105),
+                                             "التصنيف": st.column_config.TextColumn(width=230),
+                                             "العقد": st.column_config.TextColumn(width=180),
+                                             "البيان": st.column_config.TextColumn(width=380)})
+            sel = list(ev.selection.rows) if unlocked else []
+            has_sel = True
+        except TypeError:
+            st.dataframe(sty, hide_index=True, use_container_width=True)
+            has_sel = False
+    if not unlocked:
+        st.caption("🔒 للتعديل أدخل كلمة السر في الشريط الجانبي.")
+        return
+    opts_i = [i for i, _ in ITEMS]
+    keep = "— بدون تغيير —"
+    lab = {r["_k"]: f"{r['الطرف (عميل/مورد)'][:35]} | {r['التاريخ']} | {r['الأثر النقدي']:,.0f}" for _, r in E.iterrows()}
+    if has_sel:
+        pick = [E.loc[i, "_k"] for i in sel if i < len(E)]
+        st.caption("حدّد سطراً أو أكثر بالمربعات على يمين الجدول، ثم اختر التصنيف و/أو العقد واضغط تطبيق.")
+    else:
+        pick = st.multiselect("السطور المراد تعديلها", list(lab.keys()), format_func=lambda k: lab[k], key=f"{key}_bp_{ver}")
+    c1, c2, c3 = st.columns([3, 2, 2])
+    ni = c1.selectbox("التصنيف الجديد", [keep] + opts_i, key=f"{key}_bi_{ver}")
+    nc = c2.selectbox("العقد الجديد", [keep] + MAIN_OPTS, key=f"{key}_bc_{ver}")
+    c3.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    b1, b2 = st.columns(2)
+    if pick:
+        tot = float(E[E["_k"].isin(pick)]["الأثر النقدي"].sum())
+        st.caption(f"المحدد: {len(pick)} سطراً، الإجمالي {tot:,.0f}")
+    if b1.button(f"تطبيق على المحدد ({len(pick)})", key=f"{key}_apply_{ver}", disabled=not pick or (ni == keep and nc == keep)):
+        cur = E.set_index("_k")
+        ov = st.session_state["cf_ovr"]
+        ov = ov[~ov["المفتاح"].isin(pick)]
+        add = pd.DataFrame([[k, cur.loc[k, "التصنيف"] if ni == keep else ni, cur.loc[k, "العقد"] if nc == keep else nc] for k in pick], columns=OVR_COLS)
+        st.session_state["cf_ovr"] = pd.concat([ov, add], ignore_index=True)
+        st.session_state["cf_ovr_ver"] = ver + 1
+        _save_ovr(st.session_state["cf_ovr"])
+        st.rerun()
+    if b2.button("إعادة المحدد إلى التصنيف التلقائي", key=f"{key}_reset_{ver}", disabled=not pick):
+        ov = st.session_state["cf_ovr"]
+        st.session_state["cf_ovr"] = ov[~ov["المفتاح"].isin(pick)].reset_index(drop=True)
+        st.session_state["cf_ovr_ver"] = ver + 1
+        _save_ovr(st.session_state["cf_ovr"])
+        st.rerun()
 
 
 def render_cashflow(ctx, build_styled_table):
@@ -1436,13 +1464,13 @@ def render_cashflow(ctx, build_styled_table):
     D = C[C["البند"] == it].copy()
     D["_a"] = D["الأثر النقدي"].abs()
     D = D.sort_values("_a", ascending=False)
-    st.caption(f"{len(D)} سطراً، الإجمالي {D['الأثر النقدي'].sum():,.0f}. أكبر 150 سطراً؛ غيّر التصنيف أو العقد من القائمة المنسدلة فيُطبَّق فوراً على كل التقرير.")
+    st.caption(f"{len(D)} سطراً، الإجمالي {D['الأثر النقدي'].sum():,.0f}. أكبر 150 سطراً؛ استخدم البحث ثم حدّد السطور وعيّن التصنيف أو العقد فيُطبَّق فوراً على كل التقرير.")
     _edit_lines(D, "cf_ed_dd", unlocked)
 
     # ---------- غير المصنف ----------
     U = C[C["البند"].isin([UNCLASS_IN, UNCLASS_OUT])].copy()
     if len(U):
-        st.markdown('<div class="cf-title">حركات غير مصنفة (أكبرها أولاً) — اختر لها التصنيف من القائمة أو أضف قاعدة في الأسفل</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cf-title">حركات غير مصنفة (أكبرها أولاً) — حدّد السطور وعيّن لها التصنيف أو أضف قاعدة في الأسفل</div>', unsafe_allow_html=True)
         U["_a"] = U["الأثر النقدي"].abs()
         U = U.sort_values("_a", ascending=False)
         _edit_lines(U, "cf_ed_un", unlocked, 200)

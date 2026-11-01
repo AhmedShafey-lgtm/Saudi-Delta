@@ -128,7 +128,13 @@ st.markdown("""
     }
     td:first-child, th:first-child {
         text-align: right !important;
+        min-width: 260px;
     }
+    /* عند إخفاء الشريط الجانبي: لا تظهر حروف محتواه بطول الشاشة */
+    [data-testid="stSidebar"][aria-expanded="false"] {
+        width: 0 !important; min-width: 0 !important; overflow: hidden !important;
+    }
+    [data-testid="stSidebar"][aria-expanded="false"] > * { visibility: hidden !important; }
     .stSelectbox, .stRadio, .stMultiSelect, .stNumberInput, .stFileUploader, .stMarkdown {
         direction: rtl !important;
         text-align: right !important;
@@ -223,7 +229,8 @@ def build_styled_table(rows_spec, columns, formula_col=None):
         rt = row_types[row.name]
         base_rtl = 'direction: rtl; text-align: right; font-size: 1.08rem; '
         if rt == 'section':
-            return [base_rtl + 'background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; font-size: 1.02rem;'] * len(row)
+            _sec = base_rtl + 'background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; font-size: 1.02rem;'
+            return [_sec + ' white-space: nowrap; overflow: visible; max-width: 0; position: relative; z-index: 2;'] + [_sec] * (len(row) - 1)
         elif rt == 'subtotal':
             return [base_rtl + 'background-color: #DBEAFE; color: #1E3A8A; font-weight: bold; border-top: 1px solid #93C5FD; border-bottom: 1px solid #93C5FD;'] * len(row)
         elif rt in ['pct', 'mult', 'days']:
@@ -240,6 +247,8 @@ def build_styled_table(rows_spec, columns, formula_col=None):
     styler = df.style.apply(_center, axis=1)
     styler = styler.set_table_styles([
         {'selector': 'th', 'props': [('text-align', 'center'), ('vertical-align', 'middle'), ('font-size', '1.05rem'), ('white-space', 'pre-line')]},
+        {'selector': 'th:first-child', 'props': [('min-width', '280px')]},
+        {'selector': 'td:first-child', 'props': [('min-width', '280px')]},
         {'selector': 'td', 'props': [('vertical-align', 'middle'), ('padding', '8px 10px')]},
     ])
     if formula_col and formula_col in df.columns:
