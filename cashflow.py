@@ -1148,6 +1148,41 @@ def _edit_lines(D, key, unlocked, limit=150):
         st.rerun()
 
 
+def _status_block(unlocked):
+    """حالة البيانات المحمّلة والنسخ الاحتياطية (تُعرض أسفل الصفحة)."""
+    st.markdown('<div class="cf-title">حالة البيانات المحمّلة والنسخ الاحتياطية</div>', unsafe_allow_html=True)
+    _rf = st.session_state["cf_refs"]
+    if len(_rf):
+        st.caption("المراجع المحمّلة: عملاء %d حركة، موردون %d حركة، أنشطة %d مورداً." % ((_rf["النوع"] == "عميل").sum(), (_rf["النوع"] == "مورد").sum(), (_rf["النوع"] == "نشاط").sum()))
+
+    if len(st.session_state["cf_lines"]):
+        _L = st.session_state["cf_lines"].copy()
+        _L["الأثر النقدي"] = pd.to_numeric(_L["الأثر النقدي"], errors="coerce").fillna(0.0)
+        _g = _L.groupby("الشهر")["الأثر النقدي"].agg(["count", "sum"]).reset_index()
+        st.caption("الأشهر المحمّلة حالياً: " + " | ".join(f"{r['الشهر']} ({int(r['count'])} سطراً، صافي {r['sum']:,.0f})" for _, r in _g.iterrows()))
+        _c1, _c2 = st.columns(2)
+        _c1.download_button("⬇️ نسخة احتياطية من البيانات المحمّلة (CSV)", data=_L.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                            file_name="cashflow_lines_backup.csv", mime="text/csv", key="cf_bk")
+        _xd = st.session_state.get("cf_exp", pd.DataFrame(columns=EXP_COLS))
+        if len(_xd):
+            st.download_button(f"⬇️ نسخة احتياطية من مصاريف قائمة الدخل ({', '.join(sorted(set(_xd['الشهر'])))})", data=_xd.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                               file_name="cashflow_exp_backup.csv", mime="text/csv", key="cf_bk3")
+        else:
+            st.caption("مصاريف قائمة الدخل غير محمّلة: أعد رفع ملفات المعاملات الأصلية (Excel) لتُستخرج المصاريف حسب مراكز التكلفة.")
+        _ovd = st.session_state.get("cf_ovr", pd.DataFrame(columns=OVR_COLS))
+        if len(_ovd):
+            st.download_button(f"⬇️ نسخة احتياطية من التعديلات اليدوية ({len(_ovd)} سطراً)", data=_ovd.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                               file_name="cashflow_overrides_backup.csv", mime="text/csv", key="cf_bk2")
+        if unlocked:
+            _dm = _c2.multiselect("حذف شهر محمّل", _g["الشهر"].tolist(), key="cf_delm")
+            if _dm and _c2.button("حذف الأشهر المحددة", key="cf_delb"):
+                _k = st.session_state["cf_lines"]
+                st.session_state["cf_lines"] = _k[~_k["الشهر"].isin(_dm)].reset_index(drop=True)
+                st.session_state["cf_hashes"] = set()
+                _save_lines(st.session_state["cf_lines"])
+                st.rerun()
+
+
 def render_cashflow(ctx, build_styled_table):
     import plotly.express as px
     import plotly.graph_objects as go
@@ -1240,41 +1275,11 @@ def render_cashflow(ctx, build_styled_table):
                 st.success(f"{f.name}: { {'عميل': 'تقرير العملاء', 'مورد': 'تقرير الموردين', 'نشاط': 'أنشطة الموردين'}[kind] }: {len(new)} سطراً.")
             except Exception as e:
                 st.error(f"تعذرت قراءة {f.name}: {e}")
-    _rf = st.session_state["cf_refs"]
-    if len(_rf):
-        st.caption("المراجع المحمّلة: عملاء %d حركة، موردون %d حركة، أنشطة %d مورداً." % ((_rf["النوع"] == "عميل").sum(), (_rf["النوع"] == "مورد").sum(), (_rf["النوع"] == "نشاط").sum()))
-
-    if len(st.session_state["cf_lines"]):
-        _L = st.session_state["cf_lines"].copy()
-        _L["الأثر النقدي"] = pd.to_numeric(_L["الأثر النقدي"], errors="coerce").fillna(0.0)
-        _g = _L.groupby("الشهر")["الأثر النقدي"].agg(["count", "sum"]).reset_index()
-        st.caption("الأشهر المحمّلة حالياً: " + " | ".join(f"{r['الشهر']} ({int(r['count'])} سطراً، صافي {r['sum']:,.0f})" for _, r in _g.iterrows()))
-        _c1, _c2 = st.columns(2)
-        _c1.download_button("⬇️ نسخة احتياطية من البيانات المحمّلة (CSV)", data=_L.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
-                            file_name="cashflow_lines_backup.csv", mime="text/csv", key="cf_bk")
-        _xd = st.session_state.get("cf_exp", pd.DataFrame(columns=EXP_COLS))
-        if len(_xd):
-            st.download_button(f"⬇️ نسخة احتياطية من مصاريف قائمة الدخل ({', '.join(sorted(set(_xd['الشهر'])))})", data=_xd.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
-                               file_name="cashflow_exp_backup.csv", mime="text/csv", key="cf_bk3")
-        else:
-            st.caption("مصاريف قائمة الدخل غير محمّلة: أعد رفع ملفات المعاملات الأصلية (Excel) لتُستخرج المصاريف حسب مراكز التكلفة.")
-        _ovd = st.session_state.get("cf_ovr", pd.DataFrame(columns=OVR_COLS))
-        if len(_ovd):
-            st.download_button(f"⬇️ نسخة احتياطية من التعديلات اليدوية ({len(_ovd)} سطراً)", data=_ovd.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
-                               file_name="cashflow_overrides_backup.csv", mime="text/csv", key="cf_bk2")
-        if unlocked:
-            _dm = _c2.multiselect("حذف شهر محمّل", _g["الشهر"].tolist(), key="cf_delm")
-            if _dm and _c2.button("حذف الأشهر المحددة", key="cf_delb"):
-                _k = st.session_state["cf_lines"]
-                st.session_state["cf_lines"] = _k[~_k["الشهر"].isin(_dm)].reset_index(drop=True)
-                st.session_state["cf_hashes"] = set()
-                _save_lines(st.session_state["cf_lines"])
-                st.rerun()
-
     lines = st.session_state["cf_lines"]
     if len(lines) == 0:
         st.markdown('<div class="cf-note">لا توجد بيانات بعد. ارفع تقرير المعاملات التفصيلي لشهر واحد على الأقل.</div>', unsafe_allow_html=True)
         _rules_editor(rules, unlocked)
+        _status_block(unlocked)
         return
 
     C = classified()
@@ -1516,6 +1521,37 @@ def render_cashflow(ctx, build_styled_table):
     D = C[C["البند"] == it].copy()
     D["_a"] = D["الأثر النقدي"].abs()
     D = D.sort_values("_a", ascending=False)
+    D["الطرف"] = [c or v or "غير محدد" for c, v in zip(D["العميل"].astype(str), D["المورد"].astype(str))] if "العميل" in D.columns else "غير محدد"
+    views = {"حسب العقد": "العقد", "حسب الموقع / مركز التكلفة": "مركز التقرير", "حسب المورد / العميل": "الطرف"}
+    _dflt = 0 if ITEM_GROUP.get(it) == "ت-داخل" else 2
+    vw = st.radio("عرض إجماليات البند", list(views.keys()), index=_dflt, horizontal=True, key=f"cf_vw_{it}")
+    gcol = views[vw]
+    by_m = st.checkbox("إظهار الأشهر", value=False, key=f"cf_vwm_{it}")
+    G = D.groupby(gcol).agg(**{"عدد السطور": ("الأثر النقدي", "size"), "الإجمالي": ("الأثر النقدي", "sum")})
+    G = G.reindex(G["الإجمالي"].abs().sort_values(ascending=False).index)
+    tot_all = float(G["الإجمالي"].sum())
+    G["النسبة"] = G["الإجمالي"] / tot_all * 100 if tot_all else 0.0
+    if by_m:
+        PM = D.pivot_table(index=gcol, columns="الشهر", values="الأثر النقدي", aggfunc="sum", fill_value=0.0).reindex(G.index)
+        G = pd.concat([G, PM], axis=1)
+    G.index.name = {"العقد": "العقد", "مركز التقرير": "الموقع / مركز التكلفة", "الطرف": "المورد / العميل"}[gcol]
+    Gt = G.reset_index()
+    fm = {c: "{:,.0f}" for c in Gt.columns if c not in (Gt.columns[0], "النسبة")}
+    fm["النسبة"] = "{:.1f}%"
+    box_s = st.container(key="cf_grid_sum_" + it) if hasattr(st, "container") else st
+    pick_g = None
+    with box_s:
+        try:
+            ev_s = st.dataframe(Gt.style.format(fm), hide_index=True, use_container_width=True, height=min(420, 38 + 35 * len(Gt)),
+                                key=f"cf_sum_{it}_{gcol}", on_select="rerun", selection_mode="single-row")
+            if ev_s.selection.rows:
+                pick_g = Gt.iloc[ev_s.selection.rows[0], 0]
+        except TypeError:
+            st.dataframe(Gt.style.format(fm), hide_index=True, use_container_width=True)
+    st.caption(f"الإجمالي {tot_all:,.0f} في {len(Gt)} صفاً، مرتبة من الأكبر إلى الأصغر (بالقيمة المطلقة). حدّد صفاً لعرض سطوره أدناه.")
+    if pick_g is not None:
+        D = D[D[gcol] == pick_g]
+        st.caption(f"سطور: {pick_g}")
     st.caption(f"{len(D)} سطراً، الإجمالي {D['الأثر النقدي'].sum():,.0f}. أكبر 150 سطراً؛ استخدم البحث ثم حدّد السطور وعيّن التصنيف أو العقد فيُطبَّق فوراً على كل التقرير.")
     _edit_lines(D, "cf_ed_dd", unlocked)
 
@@ -1528,6 +1564,7 @@ def render_cashflow(ctx, build_styled_table):
         _edit_lines(U, "cf_ed_un", unlocked, 200)
 
     _rules_editor(rules, unlocked)
+    _status_block(unlocked)
 
 
 def _rules_editor(rules, unlocked):
