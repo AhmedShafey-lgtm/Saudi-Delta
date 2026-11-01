@@ -1536,7 +1536,9 @@ def render_cashflow(ctx, build_styled_table):
         G = pd.concat([G, PM], axis=1)
     G.index.name = {"العقد": "العقد", "مركز التقرير": "الموقع / مركز التكلفة", "الطرف": "المورد / العميل"}[gcol]
     Gt = G.reset_index()
-    fm = {c: "{:,.0f}" for c in Gt.columns if c not in (Gt.columns[0], "النسبة")}
+    _cols = list(Gt.columns)
+    Gt = Gt[_cols[1:][::-1] + [_cols[0]]]  # الشبكة LTR: نعكس الترتيب فيظهر العقد أقصى اليمين ثم الأعمدة نحو اليسار
+    fm = {c: "{:,.0f}" for c in Gt.columns if c not in (_cols[0], "النسبة")}
     fm["النسبة"] = "{:.1f}%"
     box_s = st.container(key="cf_grid_sum_" + it) if hasattr(st, "container") else st
     pick_g = None
@@ -1545,15 +1547,16 @@ def render_cashflow(ctx, build_styled_table):
             ev_s = st.dataframe(Gt.style.format(fm), hide_index=True, use_container_width=True, height=min(420, 38 + 35 * len(Gt)),
                                 key=f"cf_sum_{it}_{gcol}", on_select="rerun", selection_mode="single-row")
             if ev_s.selection.rows:
-                pick_g = Gt.iloc[ev_s.selection.rows[0], 0]
+                pick_g = Gt.iloc[ev_s.selection.rows[0]][_cols[0]]
         except TypeError:
             st.dataframe(Gt.style.format(fm), hide_index=True, use_container_width=True)
     st.caption(f"الإجمالي {tot_all:,.0f} في {len(Gt)} صفاً، مرتبة من الأكبر إلى الأصغر (بالقيمة المطلقة). حدّد صفاً لعرض سطوره أدناه.")
     if pick_g is not None:
         D = D[D[gcol] == pick_g]
         st.caption(f"سطور: {pick_g}")
-    st.caption(f"{len(D)} سطراً، الإجمالي {D['الأثر النقدي'].sum():,.0f}. أكبر 150 سطراً؛ استخدم البحث ثم حدّد السطور وعيّن التصنيف أو العقد فيُطبَّق فوراً على كل التقرير.")
-    _edit_lines(D, "cf_ed_dd", unlocked)
+    with st.expander("سطور البند للتدقيق أو تعديل التصنيف والعقد (اختياري)", expanded=pick_g is not None):
+        st.caption(f"{len(D)} سطراً، الإجمالي {D['الأثر النقدي'].sum():,.0f}. أكبر 150 سطراً؛ استخدم البحث ثم حدّد السطور وعيّن التصنيف أو العقد فيُطبَّق فوراً على كل التقرير.")
+        _edit_lines(D, "cf_ed_dd", unlocked)
 
     # ---------- غير المصنف ----------
     U = C[C["البند"].isin([UNCLASS_IN, UNCLASS_OUT])].copy()
