@@ -681,7 +681,12 @@ def parse_assets(raw):
     if hi is None:
         return pd.DataFrame(columns=ASSET_COLS)
     h = [str(x or "").strip() for x in rows[hi]]
-    ix = {k: h.index(k) for k in ("تاريخ الشراء", "الموقع", "بيان الاصل", "اجمالي التكلفة") if k in h}
+    def _col(*names):
+        return next((h.index(n) for n in names if n in h), None)
+    ix = {"تاريخ الشراء": _col("تاريخ الشراء"), "الموقع": _col("الموقع"),
+          "بيان الاصل": _col("بيان الاصل", "بيان الأصل", "البيان"), "اجمالي التكلفة": _col("اجمالي التكلفة", "إجمالي التكلفة", "التكلفة")}
+    if any(v is None for v in ix.values()):
+        return pd.DataFrame(columns=ASSET_COLS)
     out = []
     for r in rows[hi + 1:]:
         d = r[ix["تاريخ الشراء"]] if len(r) > ix["تاريخ الشراء"] else None
