@@ -15,11 +15,12 @@ import numpy as np
 import plotly.express as px
 import io
 import importlib
-import exec_summary, zakat_calc, banks, cashflow
+import exec_summary, zakat_calc, banks, cashflow, hr
 importlib.reload(exec_summary)
 importlib.reload(zakat_calc)
 importlib.reload(banks)
 importlib.reload(cashflow)
+importlib.reload(hr)
 
 # إعدادات الصفحة الرئيسية
 st.set_page_config(
@@ -467,12 +468,13 @@ EX_CTX = dict(
 # ==========================================
 # تقسيم شاشات المنصة (8 تبويبات متكاملة)
 # ==========================================
-grp_mgmt, grp_fs, grp_zk, grp_bank, grp_proj = st.tabs([
+grp_mgmt, grp_fs, grp_zk, grp_bank, grp_proj, grp_hr = st.tabs([
     "📈 الإدارة والمؤشرات",
     "📑 القوائم المالية",
     "🧮 الزكاة وضريبة الدخل",
     "🏦 البنوك",
     "🏗️ المشاريع والعقود",
+    "👷 الموارد البشرية",
 ])
 with grp_mgmt:
     tab1, tab5, tab_chk = st.tabs(["📈 الملخص التنفيذي", "📉 المؤشرات المالية الشاملة (KPIs & DuPont)", "✅ فحوصات سلامة البيانات"])
@@ -480,6 +482,8 @@ with grp_fs:
     tab2, tab3, tab4, tab_eq = st.tabs(["📑 قائمة الدخل", "⚖️ المركز المالي", "💵 التدفقات النقدية", "🏛️ التغير في حقوق الملكية"])
 with grp_zk:
     tab_zk = st.container()
+with grp_hr:
+    hr.render_hr(EX_CTX, build_styled_table)
 with grp_bank:
     tab_bank, tab_cfa = st.tabs(["🏦 البنوك والتسهيلات", "💧 التدفقات النقدية الفعلية الشهرية"])
 with grp_proj:
