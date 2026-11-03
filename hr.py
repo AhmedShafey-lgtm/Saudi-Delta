@@ -49,9 +49,12 @@ PORTAL_REF = [
 BANDS = ["غير محدد", "بلاتيني", "أخضر مرتفع", "أخضر متوسط", "أخضر منخفض", "أصفر", "أحمر"]
 DEFAULT_SET = {"req": DEFAULT_REQ, "band": "غير محدد", "gosi_saudi": 402, "gosi_foreign": 1727, "gosi_date": "13/10/2026",
                "leave_days_lt5": 21, "leave_days_ge5": 30, "prof_rules": DEFAULT_PROF_RULES}
+ACT_DEFAULTS = {"val_date": "2026-12-31", "dr": 5.30, "dr_open": 5.30, "si": 2.0, "open_net": 16099000.0, "open_adv": 16387297.0, "extra_pay": 0.0}
 ACTIVE = ["يعمل", "نشط"]
 ON_LEAVE = ["مجاز"]
-EMP_COLS = ["الرقم الوظيفي", "الاسم", "المهنة", "الموقع", "الحالة", "تاريخ التعيين", "بداية العقد", "نهاية العقد", "اخر اجازة", "اخر تذكرة", "تاريخ الميلاد", "الرقم"]
+EMP_COLS = ["الرقم الوظيفي", "الاسم", "المهنة", "الموقع", "الحالة", "تاريخ التعيين", "بداية العقد", "نهاية العقد", "اخر اجازة", "اخر تذكرة", "تاريخ الميلاد", "الرقم", "الجنسية"]
+EOSB_FILE = os.path.join(HERE, "hr_eosb.csv")
+EOSB_COLS = ["الكود", "الاسم", "حتى 2024", "2025", "2026", "الحالة"]
 PAY_COLS = ["الرقم الوظيفي", "ym", "الراتب", "اجمالي الراتب", "تأمين اجتماعي", "تأمين طبي شهري", "التنقلات", "الاقامات", "بدل سكن", "بدل انتقال", "المهنة", "الموقع"]
 
 
@@ -63,20 +66,26 @@ def _norm_cols(df):
 
 def detect(raw):
     """يعيد 'موظفين' أو 'رواتب' أو None بحسب رؤوس الأعمدة."""
-    try:
-        df = _norm_cols(pd.read_excel(io.BytesIO(raw), nrows=3))
-    except Exception:
-        return None
-    c = set(df.columns)
-    if {"الحالة", "تاريخ التعيين", "اخر اجازة"} <= c:
-        return "موظفين"
-    if {"اجمالي الراتب", "الشهر"} <= c:
-        return "رواتب"
+    for sh in ("Report", 0):
+        try:
+            df = _norm_cols(pd.read_excel(io.BytesIO(raw), sheet_name=sh, nrows=3))
+        except Exception:
+            continue
+        c = set(df.columns)
+        if {"الحالة", "تاريخ التعيين", "اخر اجازة"} <= c:
+            return "موظفين"
+        if {"اجمالي الراتب", "الشهر"} <= c:
+            return "رواتب"
+        if {"الكود", "حتى 2024", "2025"} <= c:
+            return "مدفوعات"
     return None
 
 
 def parse_master(raw):
-    df = _norm_cols(pd.read_excel(io.BytesIO(raw)))
+    try:
+        df = _norm_cols(pd.read_excel(io.BytesIO(raw), sheet_name="Report"))
+    except Exception:
+        df = _norm_cols(pd.read_excel(io.BytesIO(raw)))
     for c in EMP_COLS:
         if c not in df.columns:
             df[c] = np.nan
@@ -86,7 +95,7 @@ def parse_master(raw):
     for c in ["تاريخ التعيين", "بداية العقد", "نهاية العقد", "اخر اجازة", "اخر تذكرة", "تاريخ الميلاد"]:
         df[c] = pd.to_datetime(df[c], errors="coerce")
     df["الرقم"] = df["الرقم"].map(lambda v: "" if pd.isna(v) else str(int(float(v))))
-    for c in ["الاسم", "المهنة", "الموقع", "الحالة"]:
+    for c in ["الاسم", "المهنة", "الموقع", "الحالة", "الجنسية"]:
         df[c] = df[c].fillna("").astype(str).str.strip()
     # الحالة: «مجاز» الأحدث يغلب عند التكرار
     return df.drop_duplicates("الرقم الوظيفي", keep="last").reset_index(drop=True)
@@ -107,6 +116,19 @@ def parse_payroll(raw):
     for c in ["المهنة", "الموقع"]:
         df[c] = df[c].fillna("").astype(str).str.strip()
     return df[PAY_COLS].reset_index(drop=True)
+
+
+def parse_eosb(raw):
+    df = _norm_cols(pd.read_excel(io.BytesIO(raw), sheet_name="Report"))
+    df = df[df["الكود"].notna()].copy()
+    df["الكود"] = pd.to_numeric(df["الكود"], errors="coerce")
+    df = df[df["الكود"].notna()]
+    df["الكود"] = df["الكود"].astype("int64").astype(str)
+    for c in ["حتى 2024", "2025", "2026"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0) if c in df.columns else 0.0
+    for c in ["الاسم", "الحالة"]:
+        df[c] = df[c].fillna("").astype(str).str.strip() if c in df.columns else ""
+    return df[EOSB_COLS].drop_duplicates("الكود", keep="last").reset_index(drop=True)
 
 
 def _read_csv(path, **kw):
@@ -144,11 +166,16 @@ def _state():
         if e is not None:
             for c in ["تاريخ التعيين", "بداية العقد", "نهاية العقد", "اخر اجازة", "اخر تذكرة", "تاريخ الميلاد"]:
                 e[c] = pd.to_datetime(e[c], errors="coerce")
-            e = e.fillna({"الرقم": "", "الاسم": "", "المهنة": "", "الموقع": "", "الحالة": ""})
+            if "الجنسية" not in e.columns:
+                e["الجنسية"] = ""
+            e = e.fillna({"الرقم": "", "الاسم": "", "المهنة": "", "الموقع": "", "الحالة": "", "الجنسية": ""})
         ss["hr_emp"] = e if e is not None else pd.DataFrame(columns=EMP_COLS)
     if "hr_pay" not in ss:
         p = _read_csv(PAY_FILE, dtype={"الرقم الوظيفي": str})
         ss["hr_pay"] = p if p is not None else pd.DataFrame(columns=PAY_COLS)
+    if "hr_eosb" not in ss:
+        x = _read_csv(EOSB_FILE, dtype={"الكود": str})
+        ss["hr_eosb"] = x if x is not None else pd.DataFrame(columns=EOSB_COLS)
     if "hr_inc" not in ss:
         i = _read_csv(INC_FILE, dtype={"الرقم الوظيفي": str})
         ss["hr_inc"] = i if i is not None else pd.DataFrame(columns=["الرقم الوظيفي", "الزيادة"])
@@ -182,6 +209,9 @@ def build_view(emp, pay, sett, cf):
     iqf = E["الرقم الوظيفي"].map(iq)
     iqf = iqf.where(iqf.notna(), False).astype(bool)
     nat = np.where((nat == "") & iqf, "أجنبي", nat)
+    ctry = E["الجنسية"].astype(str).str.strip()
+    E["الدولة"] = ctry
+    nat = np.where(ctry != "", np.where(ctry.str.contains("سعود"), "سعودي", "أجنبي"), nat)
     E["الجنسية"] = np.where(nat == "", "غير محدد", nat)
     E["المجموعة"] = E["المهنة"].map(lambda p: prof_group(p, sett["prof_rules"]))
     sites = {s: contract_of_site(s, cf) for s in E["الموقع"].unique()}
@@ -266,14 +296,15 @@ def render_hr(ctx, build_styled_table):
     with t_prov:
         _provisions(A, sett, build_styled_table)
     with t_act:
-        _actuarial(A, sett)
+        st.session_state["hr_unlocked"] = unlocked
+        _actuarial(A, sett, st.session_state["hr_eosb"], build_styled_table)
     with t_sug:
         _suggested(V, A, pay, ym, sett, build_styled_table)
 
 
 def _data_tab(unlocked, emp, pay, sett):
     _title("رفع البيانات")
-    st.markdown('<div class="hr-note">ارفع ملف بيانات الموظفين (الحالة، المهنة، الموقع، تاريخ التعيين، العقد، آخر إجازة، الرقم) وملف تفاصيل الرواتب الشهرية. '
+    st.markdown('<div class="hr-note">ارفع ملف بيانات الموظفين (الحالة، المهنة، الموقع، تاريخ التعيين، العقد، آخر إجازة، الجنسية، تاريخ الميلاد) وملف تفاصيل الرواتب الشهرية وكشف دفعات نهاية الخدمة. '
                 'يُتعرَّف على نوع الملف تلقائياً من رؤوس الأعمدة، ويُحفظ بجوار التطبيق (قد يضيع على الاستضافة المؤقتة فأعد الرفع عند الحاجة).</div>', unsafe_allow_html=True)
     up = st.file_uploader("ملفات الموارد البشرية (Excel)", type=["xlsx"], accept_multiple_files=True, key="hr_up", disabled=not unlocked)
     if not unlocked:
@@ -292,13 +323,18 @@ def _data_tab(unlocked, emp, pay, sett):
                     st.session_state["hr_emp"] = d
                     d.to_csv(EMP_FILE, index=False, encoding="utf-8-sig")
                     st.success(f"{f.name}: بيانات الموظفين: {len(d)} موظفاً.")
+                elif kind == "مدفوعات":
+                    d = parse_eosb(raw)
+                    st.session_state["hr_eosb"] = d
+                    d.to_csv(EOSB_FILE, index=False, encoding="utf-8-sig")
+                    st.success(f"{f.name}: دفعات نهاية الخدمة: {len(d)} موظفاً، 2026: {d['2026'].sum():,.0f}.")
                 elif kind == "رواتب":
                     d = parse_payroll(raw)
                     st.session_state["hr_pay"] = d
                     d.to_csv(PAY_FILE, index=False, encoding="utf-8-sig")
                     st.success(f"{f.name}: الرواتب: {len(d)} سطراً من {d['ym'].min()} إلى {d['ym'].max()}.")
                 else:
-                    st.warning(f"{f.name}: لم يُتعرَّف على نوع الملف (يلزم رأس أعمدة بيانات الموظفين أو تفاصيل الرواتب).")
+                    st.warning(f"{f.name}: لم يُتعرَّف على نوع الملف (يلزم رأس أعمدة بيانات الموظفين أو تفاصيل الرواتب أو كشف دفعات نهاية الخدمة).")
                     continue
                 done.add(h)
             except Exception as e:
@@ -523,16 +559,146 @@ def _provisions(A, sett, build):
     st.table(build(rows, [col, "العدد", "مخصص الإجازة", "مخصص نهاية الخدمة", "الإجمالي"]))
 
 
-def _actuarial(A, sett):
-    _title("نهاية الخدمة الاكتواري (IAS 19)")
-    st.markdown('<div class="hr-note">سيُبنى هذا التقرير عند رفع بيانات العمالة ودفعات نهاية الخدمة المسددة. الحساب الاكتواري يتطلب: تاريخ الميلاد والتعيين وتاريخ نهاية الخدمة المتوقع، '
-                'تاريخ الرواتب والزيادات، فرضيات الخصم ونمو الرواتب ومعدل ترك الخدمة وسن التقاعد، ودفعات نهاية الخدمة المسددة فعلاً لمطابقة الحركة (أرباح وخسائر اكتوارية).</div>', unsafe_allow_html=True)
-    today = pd.Timestamp(dt.date.today())
-    yrs = ((today - A["تاريخ التعيين"]).dt.days / 365.25).clip(lower=0).fillna(0)
-    liab = float((yrs.map(eosb_factor) * A["الراتب الأساسي"].fillna(0)).sum())
-    st.metric("الالتزام الفوري لنهاية الخدمة وفق نظام العمل (غير مخصوم)", _fmt(liab))
-    age_ok = int(A["تاريخ الميلاد"].notna().sum())
-    st.caption(f"الموظفون ببيانات ميلاد: {age_ok:,} من {len(A):,}، وبتاريخ تعيين: {int(A['تاريخ التعيين'].notna().sum()):,}.")
+def _act_settings(sett):
+    return {**ACT_DEFAULTS, **sett.get("act", {})}
+
+
+def _actuarial(A, sett, eosb, build):
+    import actuary as ac
+    _title("نهاية الخدمة الاكتواري (IAS 19) — طريقة وحدة الائتمان المتوقعة")
+    st.markdown('<div class="hr-note">النموذج مُعايَر على تقرير المكتب الاكتواري 31/12/2025 ومطابق له موظفاً موظفاً: التزام 2025 الإجمالي 32.45 مليون مقابل 32.49 مليون للمكتب (فرق -0.1%)، '
+                'وحركة الفائدة والقياس مطابقة لأرقام التقرير. جدول الوفيات السعودي غير متاح رقمياً فاستُعيض عنه بدالة وفيات معايَرة؛ ويبقى هذا تقديراً داخلياً يُعتمد بعد مراجعة المكتب الاكتواري '
+                'ولا يغني عن تقريره السنوي.</div>', unsafe_allow_html=True)
+    unlocked = bool(st.session_state.get("hr_unlocked", False))
+    a = _act_settings(sett)
+    c1, c2, c3, c4 = st.columns(4)
+    vd = c1.date_input("تاريخ التقييم", value=dt.date.fromisoformat(a["val_date"]), key="act_vd", disabled=not unlocked)
+    dr = c2.number_input("معدل الخصم %", value=float(a["dr"]), step=0.05, format="%.2f", key="act_dr", disabled=not unlocked)
+    si = c3.number_input("نمو الرواتب %", value=float(a["si"]), step=0.1, format="%.2f", key="act_si", disabled=not unlocked)
+    dro = c4.number_input("معدل الخصم في بداية السنة %", value=float(a["dr_open"]), step=0.05, format="%.2f", key="act_dro", disabled=not unlocked)
+    c5, c6, c7 = st.columns(3)
+    open_net = c5.number_input("صافي التزام 31/12/2025 (الدفاتر)", value=float(a["open_net"]), step=1000.0, format="%.0f", key="act_on", disabled=not unlocked)
+    open_adv = c6.number_input("رصيد الدفعات المقدمة 31/12/2025", value=float(a["open_adv"]), step=1000.0, format="%.0f", key="act_oa", disabled=not unlocked)
+    extra = c7.number_input("دفعات متوقعة حتى نهاية السنة (غير مشمولة بالكشف)", value=float(a["extra_pay"]), step=1000.0, format="%.0f", key="act_ex", disabled=not unlocked)
+    basis = st.radio("رصيد الدفعات المقدمة للمستمرين في 2026", ["رصيد 2025 المعتمد + دفعات 2026 − دفعات من غادروا", "من كشف الدفعات الجديد (التراكمي للمستمرين)"], horizontal=True, key="act_basis")
+    new = {**a, "val_date": vd.isoformat(), "dr": dr, "si": si, "dr_open": dro, "open_net": open_net, "open_adv": open_adv, "extra_pay": extra}
+    if unlocked and new != a:
+        s2 = {**st.session_state["hr_set"], "act": new}
+        st.session_state["hr_set"] = s2
+        _save_settings(s2)
+    a = new
+    a["turn"] = ac.DEFAULT["turn"]; a["ret"] = ac.DEFAULT["ret"]; a["qa"] = ac.DEFAULT["qa"]; a["qb"] = ac.DEFAULT["qb"]
+    vdt = pd.Timestamp(vd)
+    D = A.copy()
+    D = D[D["تاريخ التعيين"].notna() & (D["تاريخ التعيين"] <= vdt)].copy()
+    D["yos"] = ((vdt - D["تاريخ التعيين"]).dt.days / 365.25).clip(lower=0)
+    D["age"] = (vdt - D["تاريخ الميلاد"]).dt.days / 365.25
+    miss_dob = int(D["age"].isna().sum())
+    D["age"] = D["age"].fillna(D["age"].median() if D["age"].notna().any() else 36.0)
+    D["sal_m"] = pd.to_numeric(D["إجمالي الراتب"], errors="coerce")
+    miss_sal = int((D["sal_m"].isna() | (D["sal_m"] <= 0)).sum())
+    D["sal_m"] = D["sal_m"].where(D["sal_m"] > 0, D["الراتب الأساسي"])
+    D["sal_m"] = D["sal_m"].fillna(D["sal_m"].median() if D["sal_m"].notna().any() else 0.0)
+    if not len(D):
+        st.info("لا موظفون ببيانات كافية.")
+        return
+    dbo, e1, psc = ac.run(D, a)
+    D["DBO"], D["منافع متوقعة"], D["تكلفة خدمة متوقعة"] = dbo, e1, psc
+    gross = float(dbo.sum())
+    # الدفعات المقدمة والمدفوعات
+    ids = set(D["الرقم الوظيفي"])
+    if len(eosb):
+        E = eosb.copy()
+        act = E[E["الكود"].isin(ids)]
+        adv_cum = float((act["حتى 2024"] + act["2025"] + act["2026"]).sum())
+        adv_26 = float(act["2026"].sum())
+        left = E[~E["الكود"].isin(ids) & (E["2026"] > 0)]
+        exit_26 = float(left["2026"].sum())
+        left_adv = float((left["حتى 2024"] + left["2025"]).sum())
+    else:
+        adv_cum = adv_26 = exit_26 = left_adv = 0.0
+    pay_total = adv_26 + exit_26 + extra
+    adv_close = adv_cum if basis.startswith("من كشف") else open_adv + adv_26 - left_adv
+    net = gross - adv_close
+    sc = float(psc.sum()) / (1 + dr / 100)
+    interest, remeas = ac.movement(open_net, sc, dro, pay_total, net)
+    dbo_old, _, _ = ac.run(D, a, dr=dro)
+    fin = float(dbo_old.sum() - gross)  # ربح عند ارتفاع الخصم
+    exp_adj = -remeas - fin
+    cc = st.columns(4)
+    cc[0].metric("الالتزام الإجمالي (DBO)", _fmt(gross))
+    cc[1].metric("الدفعات المقدمة للمستمرين", _fmt(adv_close))
+    cc[2].metric("صافي الالتزام", _fmt(net))
+    cc[3].metric("عدد الموظفين", f"{len(D):,}")
+    fmtn = lambda v: _fmt(-v) if v > 0 else f"({_fmt(abs(v))})" if v < 0 else "0"  # التزام سالب كما في التقرير
+    _title("قائمة المركز المالي والأرباح والخسائر")
+    rows = [("item", "القيمة الحالية للالتزام (DBO) الإجمالي", [fmtn(gross)]),
+            ("item", "يخصم: دفعات مقدمة للمستمرين", [_fmt(adv_close)]),
+            ("total", "صافي الالتزام في 31/12/%d" % vd.year, [fmtn(net)]),
+            ("item", "تكلفة الخدمة الحالية", [fmtn(sc)]),
+            ("item", "صافي الفائدة", [fmtn(interest)]),
+            ("subtotal", "تكلفة المنافع المحددة (قائمة الربح أو الخسارة)", [fmtn(sc + interest)]),
+            ("item", "الأرباح والخسائر الاكتوارية (الدخل الشامل الآخر)", [_fmt(-remeas) if -remeas >= 0 else f"({_fmt(remeas)})"])]
+    st.table(build(rows, ["البند", "ريال"]))
+    _title("حركة صافي الالتزام")
+    rows = [("item", "الرصيد الافتتاحي (31/12/%d)" % (vd.year - 1), [fmtn(open_net)]),
+            ("item", "تكلفة الخدمة", [fmtn(sc)]),
+            ("item", "صافي الفائدة", [fmtn(interest)]),
+            ("item", "المنافع المدفوعة (خروج %s + دفعات مقدمة %s)" % (_fmt(exit_26 + extra), _fmt(adv_26)), [_fmt(pay_total)]),
+            ("item", "القياس: أرباح وخسائر اكتوارية", [_fmt(-remeas) if -remeas >= 0 else f"({_fmt(remeas)})"]),
+            ("total", "الرصيد الختامي (31/12/%d)" % vd.year, [fmtn(net)])]
+    st.table(build(rows, ["البند", "ريال"]))
+    st.caption(f"تفصيل القياس: أثر تغيير الافتراضات المالية {_fmt(fin) if fin >= 0 else '(' + _fmt(-fin) + ')'}، وتسويات الخبرة {_fmt(exp_adj) if exp_adj >= 0 else '(' + _fmt(-exp_adj) + ')'} "
+               "(ربح موجب). الفائدة = معدل بداية السنة × (الرصيد الافتتاحي + تكلفة الخدمة − نصف المدفوعات) كما في تقرير 2025.")
+    _title("تحليل الحساسية")
+    sens = [("الأصل", {}), ("معدل الخصم +1%", dict(dr=dr + 1)), ("معدل الخصم −1%", dict(dr=dr - 1)),
+            ("نمو الرواتب +1%", dict(si=si + 1)), ("نمو الرواتب −1%", dict(si=max(si - 1, 0))), ("معدل الترك +1%", dict(shift=0.01)), ("معدل الترك −1%", dict(shift=-0.01))]
+    rows = []
+    for lab, kw in sens:
+        d2, _, _ = ac.run(D, a, **kw)
+        rows.append(("item" if kw else "subtotal", lab, [_fmt(d2.sum() - adv_close), _fmt(d2.sum() - gross) if kw else ""]))
+    st.table(build(rows, ["الحالة", "صافي الالتزام", "الفرق عن الأصل"]))
+    _title("إسقاط السنة التالية")
+    e1t = float(e1.sum())
+    sc_n = float(psc.sum())
+    int_n = dr / 100 * (net + sc_n - 0.5 * e1t)
+    rows = [("item", "صافي الالتزام الحالي", [_fmt(net)]), ("item", "تكلفة الخدمة المتوقعة", [_fmt(sc_n)]),
+            ("item", "تكلفة الفائدة المتوقعة", [_fmt(int_n)]), ("item", "المنافع المتوقعة خلال السنة", [f"({_fmt(e1t)})"]),
+            ("total", "الصافي المتوقع نهاية السنة التالية", [_fmt(net + sc_n + int_n - e1t)])]
+    st.table(build(rows, ["البند", "ريال"]))
+    _title("جودة البيانات والمطابقة")
+    bad = []
+    if miss_dob:
+        bad.append(f"{miss_dob} موظفاً بلا تاريخ ميلاد (فُرض متوسط العمر)")
+    if miss_sal:
+        bad.append(f"{miss_sal} موظفاً بلا راتب في كشوف الرواتب (استُخدم الأساسي أو المتوسط)")
+    if not len(eosb):
+        bad.append("لم يُرفع كشف دفعات نهاية الخدمة؛ الدفعات والدفعات المقدمة = صفر")
+    st.caption("؛ ".join(bad) if bad else "البيانات مكتملة.")
+    if len(eosb):
+        old_active_2025 = float(eosb[eosb["الكود"].isin(ids)][["حتى 2024", "2025"]].sum().sum())
+        st.caption(f"مطابقة رصيد الدفعات المقدمة: الكشف الجديد يعطي للمستمرين حتى 2025: {_fmt(old_active_2025)} مقابل الرصيد المعتمد في تقرير 2025: {_fmt(open_adv)} "
+                   f"(فرق {_fmt(open_adv - old_active_2025)}) — يؤثر مباشرة على صافي الالتزام ويحتاج مراجعة قبل الاعتماد. استخدم الخيار الثاني أعلاه لو الكشف ناقص تاريخياً.")
+    T = D[["الرقم الوظيفي", "الاسم", "تاريخ الميلاد", "تاريخ التعيين", "sal_m", "age", "yos", "DBO", "منافع متوقعة", "تكلفة خدمة متوقعة"]].copy()
+    T.columns = ["رقم الموظف", "الاسم", "تاريخ الميلاد", "تاريخ التعيين", "الراتب الشهري", "العمر", "سنوات الخدمة", "الالتزام", "منافع متوقعة", "تكلفة خدمة متوقعة"]
+    T = T.sort_values("الالتزام", ascending=False)
+    for c in ["تاريخ الميلاد", "تاريخ التعيين"]:
+        T[c] = T[c].dt.strftime("%Y-%m-%d")
+    buf = io.BytesIO()
+    try:
+        T.to_excel(buf, index=False, sheet_name="Results")
+        st.download_button("⬇️ تنزيل الالتزام لكل موظف (Excel)", data=buf.getvalue(), file_name=f"Per_Employee_Liability_{vd.year}.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="act_dl")
+    except Exception:
+        st.download_button("⬇️ تنزيل الالتزام لكل موظف (CSV)", data=T.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"), file_name=f"Per_Employee_Liability_{vd.year}.csv", mime="text/csv", key="act_dl")
+    with st.expander("أكبر 50 موظفاً من حيث الالتزام"):
+        with st.container(key="hr_grid_act"):
+            Tt = T.head(50)
+            Tt = Tt[list(Tt.columns[::-1])]
+            st.dataframe(Tt.style.format({"الراتب الشهري": "{:,.0f}", "العمر": "{:.1f}", "سنوات الخدمة": "{:.1f}", "الالتزام": "{:,.0f}", "منافع متوقعة": "{:,.0f}", "تكلفة خدمة متوقعة": "{:,.0f}"}),
+                         hide_index=True, use_container_width=True)
+    st.caption("الفرضيات الثابتة (من تقرير 2025): التقاعد عند 60، معدل ترك الخدمة حسب سنوات الخدمة (0–5: 25%، 6–10: 15%، 11–19: 10%، 20+: 1%)، "
+               "الاستقالة تستحق: أقل من سنتين لا شيء، 2–5 ثلث، 5–10 ثلثان، 10+ كاملاً. نظام العمل المادة 84.")
 
 
 def _suggested(V, A, pay, ym, sett, build):
