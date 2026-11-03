@@ -510,6 +510,23 @@ def parse_vendors(raw):
         strs = [x for x in r if isinstance(x, str)]
         if len(strs) >= 3 and strs[2] == "مدفوعات":
             out.append(["مورد", pd.Timestamp(d).strftime("%Y-%m-%d"), round(_num(r[2]), 2), strs[1], strs[0]])
+    if not out:  # تنسيق «كشف حساب المورد - تفصيلي»: عنوان المورد في سطر منفصل (…:المورد) ثم سطور إستلام/مدفوعات
+        cur = None
+        for r in ws.iter_rows(values_only=True):
+            v = [x for x in r if x is not None]
+            if not v:
+                continue
+            if v[-1] == ":المورد" and len(v) >= 3:
+                cur = str(v[0]).strip()
+                continue
+            d = next((x for x in v if isinstance(x, (dt.datetime, dt.date))), None)
+            if d is None or cur is None or "مدفوعات" not in v:
+                continue
+            nums = [x for x in v if isinstance(x, (int, float)) and not isinstance(x, bool)]
+            if len(nums) < 3 or not nums[2]:
+                continue
+            desc = next((x for x in v if isinstance(x, str) and x != "مدفوعات" and not re.fullmatch(r"[\d\-/ ]+", x)), "")
+            out.append(["مورد", pd.Timestamp(d).strftime("%Y-%m-%d"), round(float(nums[2]), 2), cur, desc])
     return pd.DataFrame(out, columns=REF_COLS)
 
 
@@ -661,7 +678,52 @@ def expenses_classified():
         return "الإدارة" if ("الاداره" in n or "مركزالتكلفةال" in n) else NO_CONTRACT
     X["العقد"] = X["مركز التكلفة"].map(_ctr)
     X["البند"] = X["كود الحساب"].map(lambda c: _exp_item(c, rules))
+    X["موزع"] = False
+    if st.session_state.get("cf_alloc_res", True):
+        X = _alloc_residency(X)
     return X
+
+
+RES_ITEM = "إقامات وتأشيرات ورسوم حكومية"
+
+
+def _alloc_residency(X):
+    """الإقامات والتأشيرات والرسوم الحكومية المقيدة على مركز الإدارة (حسابات المشاريع 5010…) توزَّع على العقود بنسبة عدد العمالة الأجنبية
+    في كل عقد في الشهر نفسه (من تفاصيل رواتب الموارد البشرية). حسابات الإدارة الفعلية (502…) تبقى على الإدارة."""
+    try:
+        import hr as _hr
+        hc = _hr.foreign_hc_by_month(__import__(__name__))
+    except Exception:
+        hc = None
+    if hc is None or not len(hc):
+        return X
+    sel = (X["العقد"] == "الإدارة") & (X["البند"] == RES_ITEM) & ~X["كود الحساب"].astype(str).str.startswith("502")
+    if not sel.any():
+        return X
+    months = sorted(m for m in hc.index if m != "*")
+    if months:  # استبعاد الأشهر الجزئية (رواتب غير مكتملة) من أساس التوزيع
+        tot = hc.loc[months].sum(axis=1)
+        months = [m for m in months if tot[m] >= 0.8 * tot.median()] or months
+
+    def weights(m):
+        if "*" in hc.index:
+            r = hc.loc["*"]
+        else:
+            prev = [x for x in months if x <= m]
+            r = hc.loc[prev[-1] if prev else months[0]]
+        r = r[r > 0]
+        return (r / r.sum()) if r.sum() > 0 else None
+    rows = []
+    for _, r in X[sel].iterrows():
+        w = weights(r["الشهر"])
+        if w is None:
+            rows.append(r.to_dict())
+            continue
+        for ctr, k in w.items():
+            d = r.to_dict()
+            d["العقد"], d["المبلغ"], d["موزع"] = ctr, float(r["المبلغ"]) * float(k), True
+            rows.append(d)
+    return pd.concat([X[~sel], pd.DataFrame(rows)], ignore_index=True)
 
 
 def site_expenses(C_all, X, months_all, sites, excl_dep=True):
@@ -1418,6 +1480,7 @@ def render_cashflow(ctx, build_styled_table):
 
     # ---------- تقرير التشغيل حسب العقد ----------
     st.markdown('<div class="cf-title">تقرير التشغيل حسب العقد: التحصيلات (نقدي) والمصاريف (حسب قائمة الدخل)</div>', unsafe_allow_html=True)
+    st.checkbox("توزيع الإقامات والتأشيرات والرسوم الحكومية المقيدة على الإدارة بحسب عدد العمالة الأجنبية في كل عقد (من رواتب الموارد البشرية)", value=True, key="cf_alloc_res")
     X_all = expenses_classified()
     if not len(X_all):
         st.info("لحساب مصاريف كل عقد حسب قائمة الدخل أعد رفع ملفات المعاملات الأصلية (Excel) لتُستخرج المصاريف حسب مراكز التكلفة؛ فدفع المصروف لا يعني تحمّل العقد له.")
@@ -1467,6 +1530,13 @@ def render_cashflow(ctx, build_styled_table):
                 av = [float(AS_s[AS_s["الشهر"] == m]["التكلفة"].sum()) for m in sel]
                 rws.append(("item", "مشتريات أصول ثابتة", [-x for x in av] + [-sum(av)]))
         st.table(build_styled_table(rws, ["البند"] + sel + ["الإجمالي"]))
+        _al = X_all[X_all["موزع"] & X_all["الشهر"].isin(sel)] if "موزع" in X_all.columns else X_all.iloc[0:0]
+        if len(_al):
+            with st.expander(f"ما أُعيد توزيعه من الإدارة: إقامات وتأشيرات ({_al['المبلغ'].sum():,.0f})"):
+                _g = _al.groupby("العقد")["المبلغ"].sum().sort_values(ascending=False).reset_index()
+                _g.columns = ["العقد", "المبلغ الموزّع"]
+                st.dataframe(_g.style.format({"المبلغ الموزّع": "{:,.0f}"}), hide_index=True, use_container_width=True)
+                st.caption("الأساس: عدد العمالة الأجنبية في كل عقد بالشهر نفسه حسب تفاصيل الرواتب. يُلغى التوزيع بإزالة العلامة أعلاه.")
         if len(AS):
             st.markdown('<div class="cf-title">تسوية مشتريات الأصول: المدفوع نقداً من البنك مقابل سجل الأصول (للشركة بالكامل)</div>', unsafe_allow_html=True)
             _pc = C_all[(C_all["البند"] == "شراء أصول وسيارات ومعدات") & C_all["الشهر"].isin(sel)]
