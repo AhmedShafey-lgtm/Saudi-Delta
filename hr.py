@@ -629,6 +629,107 @@ def _data_tab(unlocked, emp, pay, sett):
                 st.session_state["hr_set"] = s2
                 _save_settings(s2)
     st.caption("بعد تعديل الإعدادات تتحدث التقارير عند أول تفاعل تالٍ.")
+    _backup_ui(unlocked)
+
+
+# ---------------- النسخة الاحتياطية الشاملة ----------------
+BK_FILES = {  # اسم داخل الأرشيف ← (مسار الملف على القرص، مفتاح الجلسة، هل هو مُدخَل يدوياً)
+    "hr/increases.csv": (INC_FILE, "hr_inc", True),
+    "hr/settings.json": (SET_FILE, "hr_set", True),
+    "hr/proposed.csv": (PROP_FILE, "hr_prop", True),
+    "hr/data/employees.csv": (EMP_FILE, "hr_emp", False),
+    "hr/data/payroll.csv": (PAY_FILE, "hr_pay", False),
+    "hr/data/eosb_paid.csv": (EOSB_FILE, "hr_eosb", False),
+    "hr/data/leave_saudi.csv": (LSA_FILE, "hr_lsa", False),
+    "hr/data/leave_program.csv": (LPR_FILE, "hr_lpr", False),
+    "hr/data/salary_snapshot.csv": (SAL_FILE, "hr_sal", False),
+}
+
+
+def make_backup(include_data=True):
+    include_data = bool(include_data)
+    """أرشيف ZIP واحد: العلاوات المعتمدة والمقترحة وإعدادات الموارد البشرية وبيانات البنوك، وملفات الموارد البشرية المرفوعة اختيارياً."""
+    import zipfile
+    ss = st.session_state
+    buf = io.BytesIO()
+    parts = []
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, (path, key, manual) in BK_FILES.items():
+            if not manual and not include_data:
+                continue
+            obj = ss.get(key)
+            if key == "hr_set":
+                if obj is not None:
+                    z.writestr(name, json.dumps(obj, ensure_ascii=False)); parts.append(name)
+            elif obj is not None and len(obj):
+                z.writestr(name, obj.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")); parts.append(name)
+        try:
+            import banks as _bk
+            if "bk_cur" in ss:
+                _bk._save(ss["bk_cur"])
+            if os.path.exists(_bk.DATA_FILE):
+                z.write(_bk.DATA_FILE, "banks/bank_data.json"); parts.append("banks/bank_data.json")
+        except Exception:
+            pass
+        z.writestr("manifest.json", json.dumps({"created": dt.datetime.now().isoformat(timespec="seconds"), "parts": parts, "include_data": bool(include_data)}, ensure_ascii=False))
+    return buf.getvalue(), parts
+
+
+def restore_backup(raw):
+    """يستعيد الأرشيف إلى ملفات التطبيق ثم يفرّغ ذاكرة الجلسة لتُعاد قراءتها. يعيد قائمة ما استُعيد."""
+    import zipfile
+    z = zipfile.ZipFile(io.BytesIO(raw))
+    names = set(z.namelist())
+    if "manifest.json" not in names:
+        raise ValueError("ليس ملف نسخة احتياطية صالحاً")
+    ss = st.session_state
+    done = []
+    for name, (path, key, _) in BK_FILES.items():
+        if name in names:
+            with open(path, "wb") as f:
+                f.write(z.read(name))
+            ss.pop(key, None)
+            done.append(name)
+    if "banks/bank_data.json" in names:
+        import banks as _bk
+        with open(_bk.DATA_FILE, "wb") as f:
+            f.write(z.read("banks/bank_data.json"))
+        for k in ("bk_base", "bk_cur", "bk_ver"):
+            ss.pop(k, None)
+        done.append("banks/bank_data.json")
+    ss.pop("_hr_fhc", None)
+    ss.pop("hr_hashes", None)
+    return done
+
+
+def _backup_ui(unlocked):
+    _title("النسخة الاحتياطية الشاملة")
+    st.markdown('<div class="hr-note">ملف واحد يجمع: العلاوات المعتمدة والمقترحة، وإعدادات الموارد البشرية (التوطين والنطاق وقواعد المهن وفرضيات الاكتواري)، وبيانات البنوك، '
+                'وملفات الموارد البشرية المرفوعة اختيارياً. احفظه بعد أي تعديل، واستعده بخطوة واحدة بعد كل إعادة تشغيل للاستضافة. '
+                'التدفقات النقدية لها نسخها الاحتياطية الخاصة بها.</div>', unsafe_allow_html=True)
+    if not unlocked:
+        st.info("🔒 النسخ والاستعادة مقفلان. أدخل كلمة السر في الشريط الجانبي.")
+        return
+    inc_data = st.checkbox("تضمين ملفات الموارد البشرية المرفوعة (الموظفين، الرواتب، الدفعات، الإجازات، كشف الرواتب)", value=True, key="hr_bk_data")
+    data, parts = make_backup(inc_data)
+    st.download_button(f"⬇️ نسخة احتياطية شاملة ({len(parts)} ملفاً، {len(data) / 1024:,.0f} KB)", data=data,
+                       file_name=f"delta_backup_{dt.date.today():%Y%m%d}.zip", mime="application/zip", key="hr_bk_dl")
+    up = st.file_uploader("استعادة من نسخة احتياطية (ZIP)", type=["zip"], key="hr_bk_up")
+    if up is not None:
+        h = hashlib.md5(up.getvalue()).hexdigest()
+        if st.session_state.get("hr_bk_done") != h:
+            ok = False
+            try:
+                done = restore_backup(up.getvalue())
+                st.session_state["hr_bk_done"] = h
+                st.session_state["hr_bk_msg"] = f"تمت الاستعادة: {len(done)} ملفاً."
+                ok = True
+            except Exception as e:
+                st.error(f"تعذرت الاستعادة: {e}")
+            if ok:
+                st.rerun()
+    if st.session_state.get("hr_bk_msg"):
+        st.success(st.session_state.pop("hr_bk_msg"))
 
 
 def _summary(A, pay, sett, ym, build):
@@ -792,12 +893,27 @@ def _increases(A, unlocked, ym):
     with st.container(key="hr_grid_incg"):
         st.dataframe(Gt.style.format({c: "{:,.0f}" for c in Gt.columns if c != "العقد"}), hide_index=True, use_container_width=True, height=min(380, 38 + 35 * len(Gt)))
     # ---- تفصيل الموظفين
-    c1, c2 = st.columns(2)
-    by = c1.selectbox("عرض العمالة حسب", ["المهنة", "الموقع"], key="hr_inc_by")
-    col = "المهنة" if by == "المهنة" else "الموقع"
-    vals = ["الكل"] + sorted(A[col].dropna().unique().tolist())
-    val = c2.selectbox("القيمة", vals, key="hr_inc_val")
-    D = A if val == "الكل" else A[A[col] == val]
+    st.markdown("**تصفية العمالة (تصنيف رئيسي: العقد، ثم تصنيفات فرعية)**")
+    DIMS = {"المهنة": "المهنة", "مركز التكلفة / الموقع": "الموقع", "الجنسية": "الجنسية", "المجموعة الرئيسية": "المجموعة", "الفئة": "الفئة"}
+    DIMS = {k: v for k, v in DIMS.items() if v in A.columns and (v != "الفئة" or A["الفئة"].astype(str).str.strip().ne("").any())}
+    D = A
+    c0, c1, c2, c3, c4 = st.columns([2, 2, 2, 2, 2])
+    lv1 = c0.selectbox("العقد (التصنيف الرئيسي)", ["الكل"] + sorted(A["العقد"].dropna().unique().tolist()), key="hr_inc_l1")
+    if lv1 != "الكل":
+        D = D[D["العقد"] == lv1]
+    picks = []
+    for i, (cc_, vc_, nm_) in enumerate([(c1, c2, "فرعي أول"), (c3, c4, "فرعي ثانٍ")], start=2):
+        used = {d for d, _ in picks}
+        dim = cc_.selectbox(f"التصنيف الفرعي ({nm_})", ["بدون"] + [k for k in DIMS if k not in used], key=f"hr_inc_d{i}")
+        if dim == "بدون":
+            break
+        col_ = DIMS[dim]
+        vals = ["الكل"] + sorted(D[col_].dropna().astype(str).unique().tolist())
+        v_ = vc_.selectbox(f"{dim}", vals, key=f"hr_inc_v{i}")
+        picks.append((dim, v_))
+        if v_ != "الكل":
+            D = D[D[col_].astype(str) == v_]
+    by, val = lv1, "|".join(f"{d}={v}" for d, v in picks)
     D = D.copy()
     D["المدة من آخر إجازة (شهر)"] = ((today - D["اخر اجازة"]).dt.days / 30.44).round(1)
     imp, ann = _impact(D, D["الزيادة المعتمدة"], sett, today)
@@ -896,11 +1012,11 @@ def _provisions(A, sett, build):
     by = st.radio("التجميع", ["حسب العقد", "حسب المجموعة الرئيسية", "حسب الجنسية"], horizontal=True, key="hr_prov_by")
     col = {"حسب العقد": "العقد", "حسب المجموعة الرئيسية": "المجموعة", "حسب الجنسية": "الجنسية"}[by]
     G = D.groupby(col).agg(n=("الاسم", "size"), dd=("أيام الإجازة", "sum"), l=("مخصص الإجازة", "sum"), eg=("مخصص نهاية الخدمة (إجمالي)", "sum"), pd_=("الدفعات المسددة", "sum"),
-                           e=("مخصص نهاية الخدمة", "sum"), ce=("استحقاق نهاية العقد (إجمالي)", "sum"), t=("الإجمالي", "sum")).sort_values("t", ascending=False)
-    rows = [("item", k, [str(int(r.n)), _fmt(r.dd), _fmt(r.l), _fmt(r.eg), _fmt(r.pd_), _fmt(r.e), _fmt(r.ce), _fmt(r.t)]) for k, r in G.iterrows()]
-    rows.append(("total", "الإجمالي", [str(int(G.n.sum())), _fmt(G.dd.sum()), _fmt(G.l.sum()), _fmt(G.eg.sum()), _fmt(G.pd_.sum()), _fmt(G.e.sum()), _fmt(G.ce.sum()), _fmt(G.t.sum())]))
-    st.table(build(rows, [col, "العدد", "أيام الإجازة", "مخصص الإجازة", "نهاية الخدمة (إجمالي)", "يخصم: الدفعات المسددة", "مخصص نهاية الخدمة (صافي)", "استحقاق نهاية العقد (بدون اكتواري وبدون خصم الدفعات)", "الإجمالي (إجازة + صافي)"]))
-    st.caption("الصافي = المستحق قانونياً حتى اليوم − دفعات نهاية الخدمة المسددة للموظف (حتى 2024 + 2025 + 2026). «استحقاق نهاية العقد» = المستحق لو غادر الموظف عند نهاية عقده الحالي (أو اليوم إن انتهى)، بلا معاملات اكتوارية وبدون خصم الدفعات المسددة.")
+                           e=("مخصص نهاية الخدمة", "sum"), t=("الإجمالي", "sum")).sort_values("t", ascending=False)
+    rows = [("item", k, [str(int(r.n)), _fmt(r.dd), _fmt(r.l), _fmt(r.eg), _fmt(r.pd_), _fmt(r.e), _fmt(r.t)]) for k, r in G.iterrows()]
+    rows.append(("total", "الإجمالي", [str(int(G.n.sum())), _fmt(G.dd.sum()), _fmt(G.l.sum()), _fmt(G.eg.sum()), _fmt(G.pd_.sum()), _fmt(G.e.sum()), _fmt(G.t.sum())]))
+    st.table(build(rows, [col, "العدد", "أيام الإجازة", "مخصص الإجازة", "نهاية الخدمة (إجمالي)", "يخصم: الدفعات المسددة", "مخصص نهاية الخدمة (صافي)", "الإجمالي (إجازة + صافي)"]))
+    st.caption("الصافي = المستحق قانونياً حتى اليوم − دفعات نهاية الخدمة المسددة للموظف (حتى 2024 + 2025 + 2026).")
     src = D.groupby("مصدر الاحتساب").agg(n=("الاسم", "size"), d=("أيام الإجازة", "sum"), v=("مخصص الإجازة", "sum")).sort_values("v", ascending=False)
     st.caption(" · ".join(f"{k}: {int(r.n):,} موظفاً / {_fmt(r.v)}" for k, r in src.iterrows()))
     with st.expander("قائمة الجودة والتفاصيل لكل موظف"):
