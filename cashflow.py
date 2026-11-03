@@ -695,6 +695,7 @@ def _alloc_residency(X):
         hc = _hr.foreign_hc_by_month(__import__(__name__))
     except Exception:
         hc = None
+    st.session_state["_cf_alloc_ok"] = bool(hc is not None and len(hc))
     if hc is None or not len(hc):
         return X
     sel = (X["العقد"] == "الإدارة") & (X["البند"] == RES_ITEM) & ~X["كود الحساب"].astype(str).str.startswith("502")
@@ -1482,6 +1483,8 @@ def render_cashflow(ctx, build_styled_table):
     st.markdown('<div class="cf-title">تقرير التشغيل حسب العقد: التحصيلات (نقدي) والمصاريف (حسب قائمة الدخل)</div>', unsafe_allow_html=True)
     st.checkbox("توزيع الإقامات والتأشيرات والرسوم الحكومية المقيدة على الإدارة بحسب عدد العمالة الأجنبية في كل عقد (من رواتب الموارد البشرية)", value=True, key="cf_alloc_res")
     X_all = expenses_classified()
+    if st.session_state.get("cf_alloc_res", True) and not st.session_state.get("_cf_alloc_ok", True):
+        st.warning("لم يُطبَّق توزيع الإقامات: لا توجد بيانات موظفين ورواتب محمّلة في تبويب الموارد البشرية. ارفع ملف الموظفين وكشف الرواتب (أو تفاصيل الرواتب الشهرية) هناك ثم أعد فتح هذا التقرير، وستبقى الأرقام كما هي إلى ذلك الحين.")
     if not len(X_all):
         st.info("لحساب مصاريف كل عقد حسب قائمة الدخل أعد رفع ملفات المعاملات الأصلية (Excel) لتُستخرج المصاريف حسب مراكز التكلفة؛ فدفع المصروف لا يعني تحمّل العقد له.")
     else:

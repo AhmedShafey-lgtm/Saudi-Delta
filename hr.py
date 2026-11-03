@@ -60,6 +60,8 @@ LSA_FILE = os.path.join(HERE, "hr_leave_sa.csv")
 LSA_COLS = ["الرقم الوظيفي", "الاسم", "رصيد أيام", "ملاحظات"]
 LPR_FILE = os.path.join(HERE, "hr_leave_prog.csv")
 LPR_COLS = ["الرقم الوظيفي", "بداية", "نهاية", "أيام"]
+SAL_FILE = os.path.join(HERE, "hr_salary.csv")
+SAL_COLS = ["الرقم الوظيفي", "الاسم", "الموقع", "المهنة", "الفئة", "الأساسي", "البدلات", "الإجمالي", "تاريخ آخر زيادة", "مبلغ آخر زيادة"]
 PROP_FILE = os.path.join(HERE, "hr_inc_prop.csv")
 PAY_COLS = ["الرقم الوظيفي", "ym", "الراتب", "اجمالي الراتب", "تأمين اجتماعي", "تأمين طبي شهري", "التنقلات", "الاقامات", "بدل سكن", "بدل انتقال", "المهنة", "الموقع"]
 
@@ -118,10 +120,43 @@ def parse_leave_prog(raw):
     return d.reset_index(drop=True)
 
 
+def parse_salary_snapshot(raw):
+    """كشف الرواتب الحالية المسترجع: الأساسي/البدلات/الإجمالي وآخر زيادة وتاريخها لكل موظف مع الموقع والمهنة والفئة."""
+    df = pd.read_excel(io.BytesIO(raw), sheet_name=0)
+    df.columns = [re.sub(r"\s+", " ", str(c)).strip() for c in df.columns]
+    cols = list(df.columns)
+    def col(name, pos):
+        return name if name in cols else (cols[pos] if len(cols) > pos else None)
+    c_id = cols[-1]
+    c_nm = cols[-2]
+    out = pd.DataFrame({
+        "الرقم الوظيفي": pd.to_numeric(df[c_id], errors="coerce").map(lambda v: "" if pd.isna(v) else str(int(v))),
+        "الاسم": df[c_nm].fillna("").astype(str).str.strip(),
+        "الموقع": df[col("الموقع", 5)].fillna("").astype(str).str.strip(),
+        "المهنة": df[col("المهنة", 6)].fillna("").astype(str).str.strip(),
+        "الفئة": df[cols[7]].fillna("").astype(str).str.strip(),
+        "الأساسي": pd.to_numeric(df["الاساسي"], errors="coerce"),
+        "البدلات": pd.to_numeric(df["البدلات"], errors="coerce"),
+        "الإجمالي": pd.to_numeric(df["الاجمالي"], errors="coerce"),
+        "تاريخ آخر زيادة": pd.to_datetime(df["اخر زيادة"], errors="coerce"),
+        "مبلغ آخر زيادة": pd.to_numeric(df["مبلغ اخر زيادة"], errors="coerce"),
+    })
+    out = out[out["الرقم الوظيفي"] != ""].drop_duplicates("الرقم الوظيفي", keep="last")
+    return out[SAL_COLS].reset_index(drop=True)
+
+
 def parse_proposed(raw):
     """ملف زيادات مقترحة: إما برقم الموظف (الرقم الوظيفي/الكود) أو بقاعدة (المهنة أو الموقع/العقد)، وبمبلغ شهري (الزيادة) أو نسبة % من الراتب الأساسي."""
-    df = pd.read_excel(io.BytesIO(raw), sheet_name=0)
-    df = _norm_cols(df)
+    raw_df = pd.read_excel(io.BytesIO(raw), sheet_name=0, header=None)
+    id_names = ("الرقم الوظيفي", "رقم الموظف", "الكود")
+    hi = next((i for i in range(min(15, len(raw_df))) if any(str(x).strip() in id_names for x in raw_df.iloc[i].tolist())), None)
+    if hi is None:
+        df = _norm_cols(pd.read_excel(io.BytesIO(raw), sheet_name=0))
+    else:
+        df = raw_df.iloc[hi + 1:].copy()
+        df.columns = [re.sub(r"\s+", " ", str(c)).strip() for c in raw_df.iloc[hi].tolist()]
+        cid0 = next(c for c in df.columns if c in id_names)
+        df = df[pd.to_numeric(df[cid0], errors="coerce").notna()].reset_index(drop=True)
     def pick(*names):
         for n in names:
             for c in df.columns:
@@ -129,7 +164,7 @@ def parse_proposed(raw):
                     return c
         return None
     cid = pick("الرقم الوظيفي", "الكود", "رقم الموظف", "الرقم")
-    camt = pick("مبلغ الزيادة", "الزيادة المقترحة", "الزيادة", "المبلغ")
+    camt = pick("مقترح الزيادة", "مبلغ الزيادة", "الزيادة المقترحة", "الزيادة", "المبلغ")
     cpct = pick("النسبة", "نسبة")
     cprof = pick("المهنة")
     csite = pick("الموقع", "العقد")
@@ -171,6 +206,30 @@ def resolve_proposed(P, A):
     return res
 
 
+def foreign_hc_by_month(cf):
+    """عدد العمالة الأجنبية لكل عقد في كل شهر (من تفاصيل الرواتب)، أو العدد الحالي إن لم تتوفر الرواتب. يُستخدم لتوزيع الإقامات والتأشيرات.
+    يعيد DataFrame فهرسه الشهر (أو '*' للعدد الحالي) وأعمدته العقود."""
+    emp, pay, _, sett = _state()
+    if not len(emp):
+        return None
+    key = (len(emp), len(pay), len(st.session_state.get("hr_sal", [])), str(pay["ym"].max()) if len(pay) else "")
+    ch = st.session_state.get("_hr_fhc")
+    if ch and ch[0] == key:
+        return ch[1]
+    V = build_view(emp, pay, sett, cf, st.session_state.get("hr_sal"))
+    nat = V.set_index("الرقم الوظيفي")["الجنسية"]
+    if len(pay):
+        P = pay[["الرقم الوظيفي", "ym", "الموقع"]].copy()
+        P = P[P["الرقم الوظيفي"].map(nat) == "أجنبي"]
+        P["العقد"] = P["الموقع"].map(lambda x: contract_of_site(x, cf))
+        out = P.groupby(["ym", "العقد"])["الرقم الوظيفي"].nunique().unstack(fill_value=0)
+    else:
+        A = V[V["نشط"] & (V["الجنسية"] == "أجنبي")]
+        out = pd.DataFrame([A.groupby("العقد").size()], index=["*"]).fillna(0)
+    st.session_state["_hr_fhc"] = (key, out)
+    return out
+
+
 def leave_days(A, sett, lsa, lpr, today, sa_date):
     """أيام الإجازة المستحقة لكل موظف:
     - سعودي له رصيد في ملف الأرصدة: الرصيد بالأيام (السالب = صفر) + استحقاق ما بعد تاريخ الرصيد.
@@ -205,6 +264,13 @@ def detect(raw):
     k = _sniff_leave(raw)
     if k:
         return k
+    try:
+        h = pd.read_excel(io.BytesIO(raw), sheet_name=0, nrows=1)
+        hc = {re.sub(r"\s+", " ", str(c)).strip() for c in h.columns}
+        if {"مبلغ اخر زيادة", "الاساسي", "الاجمالي"} <= hc:
+            return "رواتب_حالية"
+    except Exception:
+        pass
     for sh in ("Report", 0):
         try:
             df = _norm_cols(pd.read_excel(io.BytesIO(raw), sheet_name=sh, nrows=3))
@@ -326,6 +392,11 @@ def _state():
     if "hr_inc" not in ss:
         i = _read_csv(INC_FILE, dtype={"الرقم الوظيفي": str})
         ss["hr_inc"] = i if i is not None else pd.DataFrame(columns=["الرقم الوظيفي", "الزيادة"])
+    if "hr_sal" not in ss:
+        x = _read_csv(SAL_FILE, dtype={"الرقم الوظيفي": str})
+        if x is not None:
+            x["تاريخ آخر زيادة"] = pd.to_datetime(x["تاريخ آخر زيادة"], errors="coerce")
+        ss["hr_sal"] = x if x is not None else pd.DataFrame(columns=SAL_COLS)
     if "hr_prop" not in ss:
         x = _read_csv(PROP_FILE, dtype={"الرقم الوظيفي": str})
         ss["hr_prop"] = x if x is not None else pd.DataFrame(columns=["الرقم الوظيفي", "الزيادة", "النسبة", "المهنة", "الموقع"])
@@ -350,7 +421,7 @@ def contract_of_site(text, cf):
     return cf.contract_of(t)
 
 
-def build_view(emp, pay, sett, cf):
+def build_view(emp, pay, sett, cf, sal=None):
     """جدول العاملين الحاليين (يعمل/نشط/مجاز) مع الجنسية والمجموعة والعقد وآخر راتب."""
     E = emp.copy()
     iq = pay.groupby("الرقم الوظيفي")["الاقامات"].apply(lambda s: bool((s.fillna(0) > 0).any())) if len(pay) else pd.Series(dtype=bool)
@@ -381,6 +452,16 @@ def build_view(emp, pay, sett, cf):
         for c in ["الراتب الأساسي", "إجمالي الراتب", "مبلغ آخر زيادة"]:
             E[c] = np.nan
         E["تاريخ آخر زيادة"] = None
+    E["الفئة"] = ""
+    if sal is not None and len(sal):
+        S_ = sal.drop_duplicates("الرقم الوظيفي", keep="last").set_index("الرقم الوظيفي")
+        has = E["الرقم الوظيفي"].isin(S_.index)
+        for dst, src in [("الراتب الأساسي", "الأساسي"), ("إجمالي الراتب", "الإجمالي"), ("مبلغ آخر زيادة", "مبلغ آخر زيادة")]:
+            v_ = E["الرقم الوظيفي"].map(S_[src])
+            E[dst] = np.where(has & v_.notna(), v_, E[dst])
+        ld = pd.to_datetime(E["الرقم الوظيفي"].map(S_["تاريخ آخر زيادة"]), errors="coerce").dt.strftime("%Y-%m")
+        E["تاريخ آخر زيادة"] = np.where(has, ld, E["تاريخ آخر زيادة"])
+        E["الفئة"] = E["الرقم الوظيفي"].map(S_["الفئة"]).fillna("")
     return E
 
 
@@ -435,7 +516,7 @@ def render_hr(ctx, build_styled_table):
             with t:
                 st.info("ارفع ملف بيانات الموظفين وتفاصيل الرواتب من تبويب «البيانات والإعدادات» لتظهر التقارير.")
         return
-    V = build_view(emp, pay, sett, cf)
+    V = build_view(emp, pay, sett, cf, st.session_state.get("hr_sal"))
     A_full = V[V["نشط"]].copy()
     with fbar:
         psel = st.multiselect("🔎 المهنة (فلتر ثابت يُطبَّق على كل أقسام الموارد البشرية عدا الاكتواري)", sorted(A_full["المهنة"].dropna().unique().tolist()),
@@ -488,6 +569,11 @@ def _data_tab(unlocked, emp, pay, sett):
                     st.session_state["hr_eosb"] = d
                     d.to_csv(EOSB_FILE, index=False, encoding="utf-8-sig")
                     st.success(f"{f.name}: دفعات نهاية الخدمة: {len(d)} موظفاً، 2026: {d['2026'].sum():,.0f}.")
+                elif kind == "رواتب_حالية":
+                    d = parse_salary_snapshot(raw)
+                    st.session_state["hr_sal"] = d
+                    d.to_csv(SAL_FILE, index=False, encoding="utf-8-sig")
+                    st.success(f"{f.name}: كشف الرواتب الحالية: {len(d):,} موظفاً، إجمالي الرواتب {d['الإجمالي'].sum():,.0f}.")
                 elif kind == "إجازات_سعوديين":
                     d = parse_leave_sa(raw)
                     st.session_state["hr_lsa"] = d
@@ -865,6 +951,14 @@ def _actuarial(A, sett, eosb, build):
     if not len(D):
         st.info("لا موظفون ببيانات كافية.")
         return
+    if miss_sal >= len(D):
+        st.error("لا توجد رواتب محمّلة، لذا لا يمكن احتساب الالتزام (تظهر الأرقام صفراً). ارفع «كشف الرواتب الحالية» أو «تفاصيل الرواتب الشهرية» من تبويب «البيانات والإعدادات» "
+                 "ثم عُد إلى هنا. الملفات المحفوظة قد تضيع عند إعادة تشغيل الاستضافة.")
+        return
+    if miss_sal > 0:
+        st.warning(f"{miss_sal:,} موظفاً بلا راتب في البيانات المحمّلة، احتُسب لهم متوسط الرواتب.")
+    if not len(eosb):
+        st.warning("كشف دفعات نهاية الخدمة غير محمّل، لذا الدفعات المقدمة للمستمرين ومدفوعات 2026 صفر. ارفعه من «البيانات والإعدادات».")
     dbo, e1, psc = ac.run(D, a)
     D["DBO"], D["منافع متوقعة"], D["تكلفة خدمة متوقعة"] = dbo, e1, psc
     gross = float(dbo.sum())
