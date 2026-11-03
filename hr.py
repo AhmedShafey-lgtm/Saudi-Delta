@@ -4,6 +4,7 @@
 
 import io, os, re, json, hashlib, datetime as dt
 import numpy as np
+import openpyxl
 import pandas as pd
 import streamlit as st
 
@@ -55,6 +56,11 @@ ON_LEAVE = ["مجاز"]
 EMP_COLS = ["الرقم الوظيفي", "الاسم", "المهنة", "الموقع", "الحالة", "تاريخ التعيين", "بداية العقد", "نهاية العقد", "اخر اجازة", "اخر تذكرة", "تاريخ الميلاد", "الرقم", "الجنسية"]
 EOSB_FILE = os.path.join(HERE, "hr_eosb.csv")
 EOSB_COLS = ["الكود", "الاسم", "حتى 2024", "2025", "2026", "الحالة"]
+LSA_FILE = os.path.join(HERE, "hr_leave_sa.csv")
+LSA_COLS = ["الرقم الوظيفي", "الاسم", "رصيد أيام", "ملاحظات"]
+LPR_FILE = os.path.join(HERE, "hr_leave_prog.csv")
+LPR_COLS = ["الرقم الوظيفي", "بداية", "نهاية", "أيام"]
+PROP_FILE = os.path.join(HERE, "hr_inc_prop.csv")
 PAY_COLS = ["الرقم الوظيفي", "ym", "الراتب", "اجمالي الراتب", "تأمين اجتماعي", "تأمين طبي شهري", "التنقلات", "الاقامات", "بدل سكن", "بدل انتقال", "المهنة", "الموقع"]
 
 
@@ -64,8 +70,141 @@ def _norm_cols(df):
     return df
 
 
+def _sniff_leave(raw):
+    """يتعرف على ملفي الإجازات: رصيد أيام السعوديين، وتقرير إجازات البرنامج (Employee Vacation Report)."""
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        ws = wb.worksheets[0]
+        txt = " ".join(str(v) for r in ws.iter_rows(min_row=1, max_row=12, values_only=True) for v in r if v is not None)
+        wb.close()
+    except Exception:
+        return None
+    if "Employee Vacation Report" in txt:
+        return "إجازات_برنامج"
+    if "المتبقي المعتمد" in txt and "الرصيد الحالي" in txt:
+        return "إجازات_سعوديين"
+    return None
+
+
+def parse_leave_sa(raw):
+    """رصيد إجازات السعوديين بالأيام (ورقة البيان المجمع): الرقم، الاسم، الرصيد الحالي (أيام)، الملاحظات."""
+    df = pd.read_excel(io.BytesIO(raw), sheet_name=0, header=None)
+    hi = next(i for i in range(min(15, len(df))) if "الرصيد الحالي" in [str(x).strip() for x in df.iloc[i].tolist()])
+    df.columns = [re.sub(r"\s+", " ", str(c)).strip() for c in df.iloc[hi].tolist()]
+    df = df.iloc[hi + 1:]
+    df = df[pd.to_numeric(df["الرقم"], errors="coerce").notna()].copy()
+    df["الرقم الوظيفي"] = pd.to_numeric(df["الرقم"]).astype("int64").astype(str)
+    df["رصيد أيام"] = pd.to_numeric(df["الرصيد الحالي"], errors="coerce")  # #VALUE! تبقى فارغة وتُعرض كملاحظة جودة
+    df["الاسم"] = df["الاسم"].fillna("").astype(str).str.strip()
+    df["ملاحظات"] = df["ملاحظات"].fillna("").astype(str).str.strip() if "ملاحظات" in df.columns else ""
+    return df[LSA_COLS].drop_duplicates("الرقم الوظيفي", keep="last").reset_index(drop=True)
+
+
+def parse_leave_prog(raw):
+    """تقرير إجازات البرنامج: يستخرج الإجازات الفعلية المنتهية (بداية ونهاية فعلية وأيام) لكل موظف."""
+    import datetime as _dt
+    wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    cur, recs = None, []
+    for r in wb.worksheets[0].iter_rows(values_only=True):
+        r = list(r) + [None] * 20
+        if r[0] == "Employee Code :":
+            cur = str(r[3]).strip()
+        elif cur and isinstance(r[0], _dt.datetime) and isinstance(r[5], _dt.datetime) and isinstance(r[8], _dt.datetime):
+            recs.append((cur, r[5], r[8], r[13]))
+    wb.close()
+    d = pd.DataFrame(recs, columns=LPR_COLS)
+    d["أيام"] = pd.to_numeric(d["أيام"], errors="coerce").fillna((d["نهاية"] - d["بداية"]).dt.days + 1)
+    d = d.drop_duplicates(["الرقم الوظيفي", "بداية", "نهاية"], keep="last")
+    return d.reset_index(drop=True)
+
+
+def parse_proposed(raw):
+    """ملف زيادات مقترحة: إما برقم الموظف (الرقم الوظيفي/الكود) أو بقاعدة (المهنة أو الموقع/العقد)، وبمبلغ شهري (الزيادة) أو نسبة % من الراتب الأساسي."""
+    df = pd.read_excel(io.BytesIO(raw), sheet_name=0)
+    df = _norm_cols(df)
+    def pick(*names):
+        for n in names:
+            for c in df.columns:
+                if n in c:
+                    return c
+        return None
+    cid = pick("الرقم الوظيفي", "الكود", "رقم الموظف", "الرقم")
+    camt = pick("مبلغ الزيادة", "الزيادة المقترحة", "الزيادة", "المبلغ")
+    cpct = pick("النسبة", "نسبة")
+    cprof = pick("المهنة")
+    csite = pick("الموقع", "العقد")
+    if camt is None and cpct is None:
+        raise ValueError("لم أجد عمود مبلغ الزيادة أو النسبة")
+    if cid is None and cprof is None and csite is None:
+        raise ValueError("لم أجد عمود الرقم الوظيفي أو المهنة أو الموقع")
+    out = pd.DataFrame({
+        "الرقم الوظيفي": (pd.to_numeric(df[cid], errors="coerce").map(lambda v: "" if pd.isna(v) else str(int(v)))) if cid else "",
+        "الزيادة": pd.to_numeric(df[camt], errors="coerce") if camt else np.nan,
+        "النسبة": pd.to_numeric(df[cpct], errors="coerce") if cpct else np.nan,
+        "المهنة": df[cprof].fillna("").astype(str).str.strip() if cprof and cprof != cid else "",
+        "الموقع": df[csite].fillna("").astype(str).str.strip() if csite and csite != cid else ""})
+    return out[(out["الزيادة"].fillna(0) != 0) | (out["النسبة"].fillna(0) != 0)].reset_index(drop=True)
+
+
+def resolve_proposed(P, A):
+    """يحوّل الملف المقترح إلى مبلغ شهري لكل موظف (الرقم الوظيفي → مبلغ). قاعدة الموظف بالرقم تغلب قاعدة المهنة/الموقع."""
+    res = pd.Series(0.0, index=A["الرقم الوظيفي"].values)
+    if not len(P):
+        return res
+    base = A.set_index("الرقم الوظيفي")["الراتب الأساسي"].fillna(0)
+    def amt(r, ids):
+        if pd.notna(r["الزيادة"]) and r["الزيادة"] != 0:
+            return pd.Series(float(r["الزيادة"]), index=ids)
+        return base.reindex(ids).fillna(0) * float(r["النسبة"] or 0) / 100.0
+    for _, r in P[P["الرقم الوظيفي"].astype(str).str.len() == 0].iterrows():
+        m = pd.Series(True, index=A.index)
+        if r["المهنة"]:
+            m &= A["المهنة"].astype(str).str.contains(re.escape(r["المهنة"]), regex=True)
+        if r["الموقع"]:
+            m &= A["الموقع"].astype(str).str.contains(re.escape(r["الموقع"]), regex=True) | A["العقد"].astype(str).str.contains(re.escape(r["الموقع"]), regex=True)
+        ids = A.loc[m, "الرقم الوظيفي"].values
+        res.loc[ids] = amt(r, ids).values
+    for _, r in P[P["الرقم الوظيفي"].astype(str).str.len() > 0].iterrows():
+        i = str(r["الرقم الوظيفي"])
+        if i in res.index:
+            res.loc[i] = float(amt(r, [i]).iloc[0])
+    return res
+
+
+def leave_days(A, sett, lsa, lpr, today, sa_date):
+    """أيام الإجازة المستحقة لكل موظف:
+    - سعودي له رصيد في ملف الأرصدة: الرصيد بالأيام (السالب = صفر) + استحقاق ما بعد تاريخ الرصيد.
+    - غير ذلك (الأجانب وغيرهم): الاستحقاق من تاريخ آخر إجازة فعلية (تقرير البرنامج أو الملف الرئيسي) أو من التعيين إن لم توجد."""
+    D = A[["الرقم الوظيفي", "الاسم", "الجنسية", "تاريخ التعيين", "اخر اجازة"]].copy()
+    yrs = ((today - D["تاريخ التعيين"]).dt.days / 365.25).clip(lower=0).fillna(0)
+    D["سنوي"] = np.where(yrs >= 5, sett["leave_days_ge5"], sett["leave_days_lt5"])
+    if len(lpr):
+        D["آخر إجازة (برنامج)"] = D["الرقم الوظيفي"].map(lpr.groupby("الرقم الوظيفي")["نهاية"].max())
+    else:
+        D["آخر إجازة (برنامج)"] = pd.NaT
+    D["آخر إجازة معتمدة"] = D[["آخر إجازة (برنامج)", "اخر اجازة"]].max(axis=1)
+    D["بداية الاحتساب"] = D["آخر إجازة معتمدة"].where(D["آخر إجازة معتمدة"].notna(), D["تاريخ التعيين"])
+    D["بداية الاحتساب"] = D[["بداية الاحتساب", "تاريخ التعيين"]].max(axis=1)
+    if len(lsa):
+        D["رصيد الملف"] = D["الرقم الوظيفي"].map(lsa.set_index("الرقم الوظيفي")["رصيد أيام"])
+        has = D["رصيد الملف"].notna()
+    else:
+        D["رصيد الملف"] = np.nan
+        has = pd.Series(False, index=D.index)
+    sa_ts = pd.Timestamp(sa_date)
+    post = ((today - sa_ts).days / 365.25) * D["سنوي"] if today > sa_ts else 0.0
+    d_file = D["رصيد الملف"].clip(lower=0).fillna(0) + post
+    d_calc = ((today - D["بداية الاحتساب"]).dt.days.clip(lower=0).fillna(0) / 365.25) * D["سنوي"]
+    D["أيام الإجازة المستحقة"] = np.where(has, d_file, d_calc)
+    D["مصدر الاحتساب"] = np.where(has, "رصيد الملف (سعوديون)", np.where(D["آخر إجازة (برنامج)"].notna(), "آخر إجازة من البرنامج", np.where(D["اخر اجازة"].notna(), "آخر إجازة من الملف الرئيسي", "من تاريخ التعيين")))
+    return D
+
+
 def detect(raw):
     """يعيد 'موظفين' أو 'رواتب' أو None بحسب رؤوس الأعمدة."""
+    k = _sniff_leave(raw)
+    if k:
+        return k
     for sh in ("Report", 0):
         try:
             df = _norm_cols(pd.read_excel(io.BytesIO(raw), sheet_name=sh, nrows=3))
@@ -176,9 +315,20 @@ def _state():
     if "hr_eosb" not in ss:
         x = _read_csv(EOSB_FILE, dtype={"الكود": str})
         ss["hr_eosb"] = x if x is not None else pd.DataFrame(columns=EOSB_COLS)
+    if "hr_lsa" not in ss:
+        x = _read_csv(LSA_FILE, dtype={"الرقم الوظيفي": str})
+        ss["hr_lsa"] = x.fillna({"ملاحظات": "", "الاسم": ""}) if x is not None else pd.DataFrame(columns=LSA_COLS)
+    if "hr_lpr" not in ss:
+        x = _read_csv(LPR_FILE, dtype={"الرقم الوظيفي": str})
+        if x is not None:
+            x["بداية"] = pd.to_datetime(x["بداية"], errors="coerce"); x["نهاية"] = pd.to_datetime(x["نهاية"], errors="coerce")
+        ss["hr_lpr"] = x if x is not None else pd.DataFrame(columns=LPR_COLS)
     if "hr_inc" not in ss:
         i = _read_csv(INC_FILE, dtype={"الرقم الوظيفي": str})
         ss["hr_inc"] = i if i is not None else pd.DataFrame(columns=["الرقم الوظيفي", "الزيادة"])
+    if "hr_prop" not in ss:
+        x = _read_csv(PROP_FILE, dtype={"الرقم الوظيفي": str})
+        ss["hr_prop"] = x if x is not None else pd.DataFrame(columns=["الرقم الوظيفي", "الزيادة", "النسبة", "المهنة", "الموقع"])
     if "hr_set" not in ss:
         ss["hr_set"] = _load_settings()
     return ss["hr_emp"], ss["hr_pay"], ss["hr_inc"], ss["hr_set"]
@@ -274,6 +424,7 @@ def render_hr(ctx, build_styled_table):
     unlocked = bool(ctx.get("UP_UNLOCKED", False))
     emp, pay, inc, sett = _state()
     st.subheader("👷 الموارد البشرية")
+    fbar = st.container()
     tabs = st.tabs(["📊 الملخص والسعودة", "👥 استعراض العاملين", "💰 العلاوات", "📌 المخصصات المستحقة", "📐 نهاية الخدمة الاكتواري", "🧾 تقارير مقترحة", "⚙️ البيانات والإعدادات"])
     t_sum, t_emp, t_inc, t_prov, t_act, t_sug, t_set = tabs
     with t_set:
@@ -285,6 +436,15 @@ def render_hr(ctx, build_styled_table):
                 st.info("ارفع ملف بيانات الموظفين وتفاصيل الرواتب من تبويب «البيانات والإعدادات» لتظهر التقارير.")
         return
     V = build_view(emp, pay, sett, cf)
+    A_full = V[V["نشط"]].copy()
+    with fbar:
+        psel = st.multiselect("🔎 المهنة (فلتر ثابت يُطبَّق على كل أقسام الموارد البشرية عدا الاكتواري)", sorted(A_full["المهنة"].dropna().unique().tolist()),
+                              key="hr_g_prof", placeholder="كل المهن")
+        if not len(pay):
+            st.warning("لا توجد تفاصيل رواتب محمّلة حالياً، لذا تظهر الرواتب والتأمينات والإقامات صفراً. أعد رفع ملف تفاصيل الرواتب الشهرية من «البيانات والإعدادات» "
+                       "(الملفات المحفوظة قد تضيع عند إعادة تشغيل الاستضافة).")
+    if psel:
+        V = V[V["المهنة"].isin(psel)].copy()
     A = V[V["نشط"]].copy()
     ym = good_month(pay)
     with t_sum:
@@ -297,7 +457,7 @@ def render_hr(ctx, build_styled_table):
         _provisions(A, sett, build_styled_table)
     with t_act:
         st.session_state["hr_unlocked"] = unlocked
-        _actuarial(A, sett, st.session_state["hr_eosb"], build_styled_table)
+        _actuarial(A_full, sett, st.session_state["hr_eosb"], build_styled_table)
     with t_sug:
         _suggested(V, A, pay, ym, sett, build_styled_table)
 
@@ -328,6 +488,16 @@ def _data_tab(unlocked, emp, pay, sett):
                     st.session_state["hr_eosb"] = d
                     d.to_csv(EOSB_FILE, index=False, encoding="utf-8-sig")
                     st.success(f"{f.name}: دفعات نهاية الخدمة: {len(d)} موظفاً، 2026: {d['2026'].sum():,.0f}.")
+                elif kind == "إجازات_سعوديين":
+                    d = parse_leave_sa(raw)
+                    st.session_state["hr_lsa"] = d
+                    d.to_csv(LSA_FILE, index=False, encoding="utf-8-sig")
+                    st.success(f"{f.name}: أرصدة إجازات السعوديين: {len(d)} موظفاً، إجمالي الأيام {d['رصيد أيام'].clip(lower=0).sum():,.0f}.")
+                elif kind == "إجازات_برنامج":
+                    d = parse_leave_prog(raw)
+                    st.session_state["hr_lpr"] = d
+                    d.to_csv(LPR_FILE, index=False, encoding="utf-8-sig")
+                    st.success(f"{f.name}: إجازات البرنامج: {len(d):,} إجازة فعلية لـ {d['الرقم الوظيفي'].nunique():,} موظفاً حتى {d['نهاية'].max():%Y-%m-%d}.")
                 elif kind == "رواتب":
                     d = parse_payroll(raw)
                     st.session_state["hr_pay"] = d
@@ -463,74 +633,142 @@ def _browse(V):
     st.download_button("⬇️ تنزيل القائمة (CSV)", data=D.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"), file_name="hr_employees.csv", mime="text/csv", key="hr_dl")
 
 
+def _impact(D, d, sett, today):
+    """أثر الزيادة الشهرية d (Series بنفس فهرس D): نقدي 12 شهراً، مخصص الإجازة، مخصص نهاية الخدمة (من التعيين حتى نهاية العقد)."""
+    yrs = ((today - D["تاريخ التعيين"]).dt.days / 365.25).fillna(0)
+    ann = np.where(yrs >= 5, sett["leave_days_ge5"], sett["leave_days_lt5"])
+    end = D["نهاية العقد"].fillna(today)
+    T_ = ((end - D["تاريخ التعيين"]).dt.days / 365.25).clip(lower=0).fillna(0)
+    out = pd.DataFrame(index=D.index)
+    out["أثر نقدي 12 شهراً"] = d * 12
+    out["أثر على مخصص الإجازة"] = d / 30 * ann
+    out["أثر على مخصص نهاية الخدمة"] = d * T_.map(eosb_factor)
+    out["إجمالي الأثر على المخصصات"] = out["أثر على مخصص الإجازة"] + out["أثر على مخصص نهاية الخدمة"]
+    out["إجمالي الأثر"] = out["أثر نقدي 12 شهراً"] + out["إجمالي الأثر على المخصصات"]
+    return out, ann
+
+
+def _save_inc(df):
+    st.session_state["hr_inc"] = df
+    try:
+        df.to_csv(INC_FILE, index=False, encoding="utf-8-sig")
+    except Exception:
+        pass
+
+
 def _increases(A, unlocked, ym):
     _title("تقرير العلاوات")
     st.markdown('<div class="hr-note">يحفظ العلاوات المعتمدة ويحسب أثرها: نقدياً لمدة 12 شهراً، وعلى مخصص الإجازة (دورة 12 شهراً من تاريخ آخر إجازة)، وعلى مخصص نهاية الخدمة '
-                '(من تاريخ التعيين حتى نهاية العقد: نصف شهر عن كل سنة من الخمس الأولى وشهر عن كل سنة بعدها). تُضاف الزيادة إلى الأساس المستخدم في المخصصات.</div>', unsafe_allow_html=True)
+                '(من تاريخ التعيين حتى نهاية العقد: نصف شهر عن كل سنة من الخمس الأولى وشهر عن كل سنة بعدها). '
+                'تاريخ ومبلغ آخر زيادة يُستخرجان من تغيّر الراتب الأساسي في تفاصيل الرواتب الشهرية المرفوعة (يناير 2025 فما بعد).</div>', unsafe_allow_html=True)
     sett = st.session_state["hr_set"]
+    today = pd.Timestamp(dt.date.today())
+    # ---- زيادات مقترحة من ملف
+    prop = st.session_state.get("hr_prop", pd.DataFrame())
+    with st.expander(f"📥 زيادات مقترحة من ملف Excel (المحمّل: {len(prop):,} سطراً)", expanded=False):
+        st.caption("أعمدة الملف: الرقم الوظيفي (أو المهنة/الموقع لقاعدة عامة) + «الزيادة» (مبلغ شهري) أو «النسبة» (% من الراتب الأساسي). قاعدة الرقم الوظيفي تغلب قاعدة المهنة/الموقع.")
+        f = st.file_uploader("ملف الزيادات المقترحة", type=["xlsx"], key="hr_prop_up", disabled=not unlocked)
+        if f is not None and unlocked:
+            h = hashlib.md5(f.getvalue()).hexdigest()
+            if st.session_state.get("hr_prop_hash") != h:
+                try:
+                    P = parse_proposed(f.getvalue())
+                    st.session_state["hr_prop"] = P
+                    st.session_state["hr_prop_hash"] = h
+                    P.to_csv(PROP_FILE, index=False, encoding="utf-8-sig")
+                    st.success(f"تم تحميل {len(P):,} سطراً من الزيادات المقترحة.")
+                    prop = P
+                except Exception as e:
+                    st.error(f"تعذرت قراءة الملف: {e}")
+        if len(prop) and unlocked and st.button("اعتماد المقترحة كزيادات معتمدة (تستبدل المعتمدة الحالية للمشمولين)", key="hr_prop_adopt"):
+            r = resolve_proposed(prop, A)
+            r = r[r != 0]
+            cur = st.session_state["hr_inc"]
+            cur = cur[~cur["الرقم الوظيفي"].isin(r.index)]
+            _save_inc(pd.concat([cur, pd.DataFrame({"الرقم الوظيفي": r.index, "الزيادة": r.values})], ignore_index=True))
+            st.rerun()
+    scen = st.radio("السيناريو المعروض", ["المعتمدة", "المقترحة (من الملف)", "المعتمدة + المقترحة"], horizontal=True, key="hr_inc_scen")
+    inc = st.session_state["hr_inc"].drop_duplicates("الرقم الوظيفي", keep="last").set_index("الرقم الوظيفي")["الزيادة"]
+    appr = A["الرقم الوظيفي"].map(inc).fillna(0.0).astype(float)
+    propv = A["الرقم الوظيفي"].map(resolve_proposed(prop, A)).fillna(0.0).astype(float) if len(prop) else pd.Series(0.0, index=A.index)
+    A = A.copy()
+    A["الزيادة المعتمدة"] = {"المعتمدة": appr, "المقترحة (من الملف)": propv, "المعتمدة + المقترحة": appr + propv}[scen].values
+    imp_all, _ = _impact(A, A["الزيادة المعتمدة"], sett, today)
+    # ---- أثر على مستوى الشركة والعقود
+    Gc = pd.concat([A[["العقد", "الزيادة المعتمدة"]], imp_all], axis=1)
+    G = Gc.groupby("العقد").agg(**{"المستفيدون": ("الزيادة المعتمدة", lambda x: int((x > 0).sum())), "الزيادة الشهرية": ("الزيادة المعتمدة", "sum"),
+                                  "أثر نقدي 12 شهراً": ("أثر نقدي 12 شهراً", "sum"), "أثر المخصصات": ("إجمالي الأثر على المخصصات", "sum"), "إجمالي الأثر": ("إجمالي الأثر", "sum")})
+    G = G.sort_values("إجمالي الأثر", ascending=False)
+    G.loc["الإجمالي (الشركة)"] = G.sum()
+    Gt = G.reset_index()
+    Gt = Gt[list(Gt.columns[1:][::-1]) + [Gt.columns[0]]]
+    st.markdown("**الأثر على مستوى العقد / الشركة**")
+    with st.container(key="hr_grid_incg"):
+        st.dataframe(Gt.style.format({c: "{:,.0f}" for c in Gt.columns if c != "العقد"}), hide_index=True, use_container_width=True, height=min(380, 38 + 35 * len(Gt)))
+    # ---- تفصيل الموظفين
     c1, c2 = st.columns(2)
     by = c1.selectbox("عرض العمالة حسب", ["المهنة", "الموقع"], key="hr_inc_by")
     col = "المهنة" if by == "المهنة" else "الموقع"
     vals = ["الكل"] + sorted(A[col].dropna().unique().tolist())
     val = c2.selectbox("القيمة", vals, key="hr_inc_val")
-    today = pd.Timestamp(dt.date.today())
-    D = A.copy() if val == "الكل" else A[A[col] == val].copy()
-    inc = st.session_state["hr_inc"].drop_duplicates("الرقم الوظيفي", keep="last").set_index("الرقم الوظيفي")["الزيادة"]
-    D["الزيادة المعتمدة"] = D["الرقم الوظيفي"].map(inc).fillna(0.0).astype(float)
+    D = A if val == "الكل" else A[A[col] == val]
+    D = D.copy()
     D["المدة من آخر إجازة (شهر)"] = ((today - D["اخر اجازة"]).dt.days / 30.44).round(1)
-    yrs = ((today - D["تاريخ التعيين"]).dt.days / 365.25).fillna(0)
-    ann = np.where(yrs >= 5, sett["leave_days_ge5"], sett["leave_days_lt5"])
+    imp, ann = _impact(D, D["الزيادة المعتمدة"], sett, today)
     D["إجازة مستحقة منذ آخر إجازة (يوم)"] = (D["المدة من آخر إجازة (شهر)"].clip(lower=0).fillna(0) / 12 * ann).round(1)
-    end = D["نهاية العقد"].fillna(today)
-    T_ = ((end - D["تاريخ التعيين"]).dt.days / 365.25).clip(lower=0).fillna(0)
+    D = pd.concat([D, imp], axis=1)
     d = D["الزيادة المعتمدة"]
-    D["أثر نقدي 12 شهراً"] = d * 12
-    D["أثر على مخصص الإجازة"] = d / 30 * ann
-    D["أثر على مخصص نهاية الخدمة"] = d * T_.map(eosb_factor)
-    D["إجمالي الأثر على المخصصات"] = D["أثر على مخصص الإجازة"] + D["أثر على مخصص نهاية الخدمة"]
-    D["إجمالي الأثر"] = D["أثر نقدي 12 شهراً"] + D["إجمالي الأثر على المخصصات"]
     cc = st.columns(5)
     cc[0].metric("إجمالي الزيادة الشهرية", _fmt(d.sum()))
     cc[1].metric("الأثر النقدي 12 شهراً", _fmt(D["أثر نقدي 12 شهراً"].sum()))
     cc[2].metric("أثر مخصص الإجازة", _fmt(D["أثر على مخصص الإجازة"].sum()))
     cc[3].metric("أثر مخصص نهاية الخدمة", _fmt(D["أثر على مخصص نهاية الخدمة"].sum()))
     cc[4].metric("إجمالي الأثر", _fmt(D["إجمالي الأثر"].sum()))
-    D = D.sort_values(["الزيادة المعتمدة", "إجمالي الراتب"], ascending=False)
+    D = D.sort_values(["المهنة", "الاسم"]).reset_index(drop=True)
     D["تاريخ التعيين"] = D["تاريخ التعيين"].dt.strftime("%Y-%m-%d")
     cols = ["الاسم", "المهنة", "تاريخ التعيين", "الراتب الأساسي", "تاريخ آخر زيادة", "مبلغ آخر زيادة", "المدة من آخر إجازة (شهر)", "إجازة مستحقة منذ آخر إجازة (يوم)",
             "الزيادة المعتمدة", "أثر نقدي 12 شهراً", "أثر على مخصص الإجازة", "أثر على مخصص نهاية الخدمة", "إجمالي الأثر"]
-    T = D[cols].reset_index(drop=True)
-    fm = {c: "{:,.0f}" for c in ["الراتب الأساسي", "مبلغ آخر زيادة", "الزيادة المعتمدة", "أثر نقدي 12 شهراً", "أثر على مخصص الإجازة", "أثر على مخصص نهاية الخدمة", "إجمالي الأثر"]}
+    T = D[cols].copy()
+    money = ["الراتب الأساسي", "مبلغ آخر زيادة", "الزيادة المعتمدة", "أثر نقدي 12 شهراً", "أثر على مخصص الإجازة", "أثر على مخصص نهاية الخدمة", "إجمالي الأثر"]
+    fm = {c: "{:,.0f}" for c in money}
     fm.update({"المدة من آخر إجازة (شهر)": "{:.1f}", "إجازة مستحقة منذ آخر إجازة (يوم)": "{:.1f}"})
     Tr = T[list(T.columns[::-1])]
-    sel = []
+    editable = unlocked and scen == "المعتمدة"
+    ed = None
     with st.container(key="hr_grid_inc"):
-        try:
-            ev = st.dataframe(Tr.style.format(fm, na_rep=""), hide_index=True, use_container_width=True, height=520,
-                              on_select="rerun" if unlocked else "ignore", selection_mode="multi-row", key=f"hr_inc_df_{by}_{val}")
-            sel = list(ev.selection.rows) if unlocked else []
-        except TypeError:
+        if editable:
+            st.caption("اكتب مبلغ الزيادة الشهرية أمام الموظف في عمود «الزيادة المعتمدة» ثم اضغط حفظ. (باقي الأعمدة للعرض ولا تتحدّث إلا بعد الحفظ.)")
+            cfg = {c: st.column_config.NumberColumn(c, format="%,.0f") for c in money}
+            ed = st.data_editor(Tr, hide_index=True, use_container_width=True, height=520, key=f"hr_inc_ed_{by}_{val}_{len(st.session_state['hr_inc'])}",
+                                disabled=[c for c in Tr.columns if c != "الزيادة المعتمدة"], column_config=cfg, num_rows="fixed")
+        else:
             st.dataframe(Tr.style.format(fm, na_rep=""), hide_index=True, use_container_width=True, height=520)
     if not unlocked:
         st.caption("🔒 لاعتماد العلاوات أدخل كلمة السر في الشريط الجانبي.")
         return
-    st.caption("حدّد موظفاً أو أكثر بالمربعات على يمين الجدول، ثم أدخل مبلغ العلاوة الشهرية (أو نسبة من الراتب الأساسي) واضغط اعتماد. صفر يلغي العلاوة.")
-    ids = [D.iloc[i]["الرقم الوظيفي"] for i in sel if i < len(D)]
+    if scen != "المعتمدة":
+        st.caption("الاعتماد والتعديل اليدوي متاحان في سيناريو «المعتمدة» فقط؛ استخدم زر «اعتماد المقترحة» أعلاه لنقل المقترحة إلى المعتمدة.")
+        return
+    ids_all = D["الرقم الوظيفي"].tolist()
+    if ed is not None and st.button("💾 حفظ الزيادات المدخلة في الجدول", key="hr_inc_save"):
+        newv = pd.to_numeric(ed["الزيادة المعتمدة"].reset_index(drop=True), errors="coerce").fillna(0.0)
+        cur = st.session_state["hr_inc"]
+        cur = cur[~cur["الرقم الوظيفي"].isin(ids_all)]
+        add = pd.DataFrame({"الرقم الوظيفي": ids_all, "الزيادة": newv.values})
+        add = add[add["الزيادة"] != 0]
+        _save_inc(pd.concat([cur, add], ignore_index=True))
+        st.rerun()
+    st.caption(f"أو طبّق مبلغاً أو نسبة على كل المعروضين حالياً ({len(ids_all):,} موظفاً حسب المهنة/الموقع المختار أعلاه). صفر يلغي العلاوة.")
     m1, m2, m3 = st.columns([2, 2, 2])
     mode = m1.radio("طريقة الإدخال", ["مبلغ شهري", "نسبة من الراتب الأساسي"], horizontal=True, key="hr_inc_mode")
     amt = m2.number_input("القيمة", min_value=0.0, value=0.0, step=100.0 if mode == "مبلغ شهري" else 1.0, key="hr_inc_amt")
-    if m3.button(f"اعتماد للمحدد ({len(ids)})", disabled=not ids, key="hr_inc_apply"):
+    if m3.button(f"تطبيق على كل المعروضين ({len(ids_all):,})", disabled=not ids_all, key="hr_inc_apply"):
         cur = st.session_state["hr_inc"]
-        cur = cur[~cur["الرقم الوظيفي"].isin(ids)]
+        cur = cur[~cur["الرقم الوظيفي"].isin(ids_all)]
         base = A.set_index("الرقم الوظيفي")["الراتب الأساسي"]
-        rows = [[i, (amt if mode == "مبلغ شهري" else float(base.get(i, 0) or 0) * amt / 100.0)] for i in ids]
+        rows = [[i, (amt if mode == "مبلغ شهري" else float(base.get(i, 0) or 0) * amt / 100.0)] for i in ids_all]
         new = pd.concat([cur, pd.DataFrame(rows, columns=["الرقم الوظيفي", "الزيادة"])], ignore_index=True)
-        new = new[new["الزيادة"].fillna(0) != 0]
-        st.session_state["hr_inc"] = new
-        try:
-            new.to_csv(INC_FILE, index=False, encoding="utf-8-sig")
-        except Exception:
-            pass
+        _save_inc(new[new["الزيادة"].fillna(0) != 0])
         st.rerun()
     st.download_button("⬇️ نسخة احتياطية من العلاوات المعتمدة (CSV)", data=st.session_state["hr_inc"].to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
                        file_name="hr_increases_backup.csv", mime="text/csv", key="hr_inc_bk")
@@ -538,25 +776,49 @@ def _increases(A, unlocked, ym):
 
 def _provisions(A, sett, build):
     _title("المخصصات المستحقة على الشركة (تقدير أولي)")
-    st.markdown('<div class="hr-note">تقدير أولي من بيانات الموظفين والرواتب بانتظار التقرير التفصيلي: مخصص الإجازة = الأيام المستحقة منذ آخر إجازة × الأجر اليومي (إجمالي الراتب ÷ 30)، '
+    st.markdown('<div class="hr-note">مخصص الإجازة = الأيام المستحقة × الأجر اليومي (إجمالي الراتب ÷ 30)؛ للسعوديين من رصيد الأيام المرفوع، ولغيرهم من تاريخ آخر إجازة فعلية، '
                 'ومخصص نهاية الخدمة = وفق المادة 84 من نظام العمل (نصف شهر لكل سنة من الخمس الأولى وشهر بعدها) على الراتب الأساسي حتى اليوم. '
                 'ستُقارن لاحقاً بأرصدة المخصصات في ميزان المراجعة.</div>', unsafe_allow_html=True)
     today = pd.Timestamp(dt.date.today())
+    lsa, lpr = st.session_state.get("hr_lsa", pd.DataFrame(columns=LSA_COLS)), st.session_state.get("hr_lpr", pd.DataFrame(columns=LPR_COLS))
+    c1, c2 = st.columns([1, 3])
+    sa_date = c1.date_input("تاريخ رصيد إجازات السعوديين", value=dt.date(2026, 6, 30), key="hr_sa_date",
+                            help="الرصيد في الملف محتسب حتى هذا التاريخ؛ يُضاف عليه استحقاق المدة بعده حتى اليوم.")
+    c2.caption(f"السعوديون: رصيد الأيام من الملف ({len(lsa):,} موظفاً) × الأجر اليومي. غيرهم: استحقاق من تاريخ آخر إجازة فعلية (تقرير البرنامج: {len(lpr):,} إجازة) حتى اليوم. "
+               "الرصيد السالب يُحتسب صفراً ويُعرض في قائمة الجودة.")
     D = A.copy()
     yrs = ((today - D["تاريخ التعيين"]).dt.days / 365.25).clip(lower=0).fillna(0)
-    ann = np.where(yrs >= 5, sett["leave_days_ge5"], sett["leave_days_lt5"])
-    m = ((today - D["اخر اجازة"]).dt.days / 30.44).clip(lower=0).fillna(0)
-    days = m / 12 * ann
+    L = leave_days(D, sett, lsa, lpr, today, sa_date).set_index("الرقم الوظيفي")
+    D["أيام الإجازة"] = D["الرقم الوظيفي"].map(L["أيام الإجازة المستحقة"]).fillna(0)
+    D["مصدر الاحتساب"] = D["الرقم الوظيفي"].map(L["مصدر الاحتساب"])
     sal = D["إجمالي الراتب"].fillna(0)
-    D["مخصص الإجازة"] = days * sal / 30
+    D["مخصص الإجازة"] = D["أيام الإجازة"] * sal / 30
     D["مخصص نهاية الخدمة"] = yrs.map(eosb_factor) * D["الراتب الأساسي"].fillna(0)
     D["الإجمالي"] = D["مخصص الإجازة"] + D["مخصص نهاية الخدمة"]
-    by = st.radio("التجميع", ["حسب العقد", "حسب المجموعة الرئيسية"], horizontal=True, key="hr_prov_by")
-    col = "العقد" if by == "حسب العقد" else "المجموعة"
-    G = D.groupby(col).agg(n=("الاسم", "size"), l=("مخصص الإجازة", "sum"), e=("مخصص نهاية الخدمة", "sum"), t=("الإجمالي", "sum")).sort_values("t", ascending=False)
-    rows = [("item", k, [str(int(r.n)), _fmt(r.l), _fmt(r.e), _fmt(r.t)]) for k, r in G.iterrows()]
-    rows.append(("total", "الإجمالي", [str(int(G.n.sum())), _fmt(G.l.sum()), _fmt(G.e.sum()), _fmt(G.t.sum())]))
-    st.table(build(rows, [col, "العدد", "مخصص الإجازة", "مخصص نهاية الخدمة", "الإجمالي"]))
+    by = st.radio("التجميع", ["حسب العقد", "حسب المجموعة الرئيسية", "حسب الجنسية"], horizontal=True, key="hr_prov_by")
+    col = {"حسب العقد": "العقد", "حسب المجموعة الرئيسية": "المجموعة", "حسب الجنسية": "الجنسية"}[by]
+    G = D.groupby(col).agg(n=("الاسم", "size"), dd=("أيام الإجازة", "sum"), l=("مخصص الإجازة", "sum"), e=("مخصص نهاية الخدمة", "sum"), t=("الإجمالي", "sum")).sort_values("t", ascending=False)
+    rows = [("item", k, [str(int(r.n)), _fmt(r.dd), _fmt(r.l), _fmt(r.e), _fmt(r.t)]) for k, r in G.iterrows()]
+    rows.append(("total", "الإجمالي", [str(int(G.n.sum())), _fmt(G.dd.sum()), _fmt(G.l.sum()), _fmt(G.e.sum()), _fmt(G.t.sum())]))
+    st.table(build(rows, [col, "العدد", "أيام الإجازة", "مخصص الإجازة", "مخصص نهاية الخدمة", "الإجمالي"]))
+    src = D.groupby("مصدر الاحتساب").agg(n=("الاسم", "size"), d=("أيام الإجازة", "sum"), v=("مخصص الإجازة", "sum")).sort_values("v", ascending=False)
+    st.caption(" · ".join(f"{k}: {int(r.n):,} موظفاً / {_fmt(r.v)}" for k, r in src.iterrows()))
+    with st.expander("قائمة الجودة والتفاصيل لكل موظف"):
+        sa_ids = set(A.loc[A["الجنسية"] == "سعودي", "الرقم الوظيفي"])
+        neg = lsa[(lsa["رصيد أيام"] < 0) & lsa["الرقم الوظيفي"].isin(set(D["الرقم الوظيفي"]))]
+        bad = lsa[lsa["رصيد أيام"].isna() & lsa["الرقم الوظيفي"].isin(set(D["الرقم الوظيفي"]))]
+        miss = A[A["الرقم الوظيفي"].isin(sa_ids - set(lsa["الرقم الوظيفي"]))]
+        st.caption(f"رصيد سالب (سلف إجازة): {len(neg):,} · رصيد غير صالح (#VALUE!): {len(bad):,} · سعوديون على رأس العمل غير موجودين في ملف الأرصدة: {len(miss):,}")
+        T = D[["الرقم الوظيفي", "الاسم", "الجنسية", "العقد", "إجمالي الراتب", "مصدر الاحتساب", "أيام الإجازة", "مخصص الإجازة"]].copy()
+        T["رصيد الملف"] = T["الرقم الوظيفي"].map(L["رصيد الملف"])
+        T["آخر إجازة معتمدة"] = pd.to_datetime(T["الرقم الوظيفي"].map(L["آخر إجازة معتمدة"]), errors="coerce").dt.strftime("%Y-%m-%d")
+        st.download_button("⬇️ تنزيل مخصص الإجازات لكل موظف (CSV)", data=T.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                           file_name="leave_provision.csv", mime="text/csv", key="hr_lv_dl")
+        flag = pd.concat([neg.assign(السبب="رصيد سالب"), bad.assign(السبب="قيمة غير صالحة في الملف")])[["الرقم الوظيفي", "الاسم", "رصيد أيام", "السبب"]]
+        if len(flag):
+            st.dataframe(flag, hide_index=True, use_container_width=True)
+        if len(miss):
+            st.dataframe(miss[["الرقم الوظيفي", "الاسم", "المهنة"]], hide_index=True, use_container_width=True)
 
 
 def _act_settings(sett):
@@ -580,7 +842,8 @@ def _actuarial(A, sett, eosb, build):
     open_net = c5.number_input("صافي التزام 31/12/2025 (الدفاتر)", value=float(a["open_net"]), step=1000.0, format="%.0f", key="act_on", disabled=not unlocked)
     open_adv = c6.number_input("رصيد الدفعات المقدمة 31/12/2025", value=float(a["open_adv"]), step=1000.0, format="%.0f", key="act_oa", disabled=not unlocked)
     extra = c7.number_input("دفعات متوقعة حتى نهاية السنة (غير مشمولة بالكشف)", value=float(a["extra_pay"]), step=1000.0, format="%.0f", key="act_ex", disabled=not unlocked)
-    basis = st.radio("رصيد الدفعات المقدمة للمستمرين في 2026", ["رصيد 2025 المعتمد + دفعات 2026 − دفعات من غادروا", "من كشف الدفعات الجديد (التراكمي للمستمرين)"], horizontal=True, key="act_basis")
+    basis = st.radio("رصيد الدفعات المقدمة للمستمرين في 2026", ["من كشف الدفعات الجديد (التراكمي للمستمرين)", "رصيد 2025 المعتمد + دفعات 2026 − دفعات من غادروا"], horizontal=True, key="act_basis",
+                     help="المعتمد مؤقتاً: التقرير الجديد، لحين انتهاء المراجعة المحاسبية لأرصدة 264 موظفاً (حتى 2024 = صفر)")
     new = {**a, "val_date": vd.isoformat(), "dr": dr, "si": si, "dr_open": dro, "open_net": open_net, "open_adv": open_adv, "extra_pay": extra}
     if unlocked and new != a:
         s2 = {**st.session_state["hr_set"], "act": new}
@@ -724,10 +987,10 @@ def _suggested(V, A, pay, ym, sett, build):
     today = pd.Timestamp(dt.date.today())
     D = A.copy()
     D["أشهر منذ آخر إجازة"] = ((today - D["اخر اجازة"]).dt.days / 30.44).round(1)
-    late = D[(D["الموقف"] == "على رأس العمل") & (D["أشهر منذ آخر إجازة"] >= 11)].sort_values("أشهر منذ آخر إجازة", ascending=False)
+    late = D[(D["الموقف"] == "على رأس العمل") & (D["أشهر منذ آخر إجازة"] >= 23)].sort_values("أشهر منذ آخر إجازة", ascending=False)
     ends = D[(D["نهاية العقد"] <= today + pd.Timedelta(days=90))].sort_values("نهاية العقد")
     c1, c2 = st.columns(2)
-    c1.caption(f"على رأس العمل ولم يأخذوا إجازة منذ 11 شهراً فأكثر: {len(late):,}")
+    c1.caption(f"على رأس العمل ولم يأخذوا إجازة منذ 23 شهراً فأكثر: {len(late):,}")
     c2.caption(f"عقود منتهية أو تنتهي خلال 90 يوماً: {len(ends):,}")
     for T, cols, key in [(late, ["الاسم", "المهنة", "العقد", "أشهر منذ آخر إجازة"], "late"), (ends, ["الاسم", "المهنة", "العقد", "نهاية العقد"], "ends")]:
         X = T[cols].copy()
