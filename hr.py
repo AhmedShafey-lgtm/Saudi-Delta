@@ -643,6 +643,18 @@ BK_FILES = {  # اسم داخل الأرشيف ← (مسار الملف على �
     "hr/data/leave_saudi.csv": (LSA_FILE, "hr_lsa", False),
     "hr/data/leave_program.csv": (LPR_FILE, "hr_lpr", False),
     "hr/data/salary_snapshot.csv": (SAL_FILE, "hr_sal", False),
+    # تقارير المواقع
+    "sites/map.csv": (os.path.join(HERE, "st_map.csv"), "sv_map", True),
+    "sites/settings.json": (os.path.join(HERE, "st_settings.json"), "sv_cfg", True),
+    "sites/data/bonus.csv.gz": (os.path.join(HERE, "st_bonus.csv.gz"), "sv_bon", False),
+    "sites/data/notes.csv": (os.path.join(HERE, "st_notes.csv"), "sv_not", False),
+    "sites/data/moves.csv.gz": (os.path.join(HERE, "st_moves.csv.gz"), "sv_mov", False),
+    "sites/data/settle.csv.gz": (os.path.join(HERE, "st_settle.csv.gz"), "sv_set", False),
+    "sites/data/work_orders.csv.gz": (os.path.join(HERE, "st_wo.csv.gz"), "sv_wo", False),
+    "sites/data/productivity.csv": (os.path.join(HERE, "st_prod.csv"), "sv_prd", False),
+    "sites/data/payroll_sites.csv.gz": (os.path.join(HERE, "st_pay.csv.gz"), "sv_pay", False),
+    "sites/data/item_prices.csv": (os.path.join(HERE, "st_itemprices.csv"), "sv_ipr", False),
+    "sites/data/contract_prices.csv": (os.path.join(HERE, "st_contractprices.csv"), "sv_cpr", False),
 }
 
 
@@ -658,11 +670,16 @@ def make_backup(include_data=True):
             if not manual and not include_data:
                 continue
             obj = ss.get(key)
-            if key == "hr_set":
-                if obj is not None:
-                    z.writestr(name, json.dumps(obj, ensure_ascii=False)); parts.append(name)
+            if isinstance(obj, dict):
+                z.writestr(name, json.dumps(obj, ensure_ascii=False)); parts.append(name)
+            elif name.endswith(".gz"):
+                # الملفات المضغوطة تُنسخ من القرص كما هي
+                if os.path.exists(path):
+                    z.write(path, name); parts.append(name)
             elif obj is not None and len(obj):
                 z.writestr(name, obj.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")); parts.append(name)
+            elif os.path.exists(path):
+                z.write(path, name); parts.append(name)
         try:
             import banks as _bk
             if "bk_cur" in ss:
@@ -699,6 +716,7 @@ def restore_backup(raw):
         done.append("banks/bank_data.json")
     ss.pop("_hr_fhc", None)
     ss.pop("hr_hashes", None)
+    ss.pop("sv_cfg", None)
     return done
 
 
@@ -706,6 +724,7 @@ def _backup_ui(unlocked):
     _title("النسخة الاحتياطية الشاملة")
     st.markdown('<div class="hr-note">ملف واحد يجمع: العلاوات المعتمدة والمقترحة، وإعدادات الموارد البشرية (التوطين والنطاق وقواعد المهن وفرضيات الاكتواري)، وبيانات البنوك، '
                 'وملفات الموارد البشرية المرفوعة اختيارياً. احفظه بعد أي تعديل، واستعده بخطوة واحدة بعد كل إعادة تشغيل للاستضافة. '
+                'وملفات تقارير المواقع (البونص وحركة الأصناف والتصفية وأوامر العمل والإنتاجية وجدول الربط). '
                 'التدفقات النقدية لها نسخها الاحتياطية الخاصة بها.</div>', unsafe_allow_html=True)
     if not unlocked:
         st.info("🔒 النسخ والاستعادة مقفلان. أدخل كلمة السر في الشريط الجانبي.")
