@@ -1031,10 +1031,13 @@ def _load_ovr():
 
 
 def _save_ovr(d):
+    """يحفظ التعديلات اليدوية ويعيد True عند نجاح الكتابة على القرص."""
     try:
-        d.to_csv(OVR_FILE, index=False, encoding="utf-8-sig")
-    except Exception:
-        pass
+        d.drop_duplicates("المفتاح", keep="last").to_csv(OVR_FILE, index=False, encoding="utf-8-sig")
+        return True
+    except Exception as e:
+        st.session_state["_cf_ovr_err"] = str(e)
+        return False
 
 
 def _load_arules():
@@ -1140,7 +1143,7 @@ def classified():
     C["البند0"], C["العقد0"] = C["البند"], C["العقد"]
     ov = st.session_state.get("cf_ovr", pd.DataFrame(columns=OVR_COLS))
     if len(ov):
-        om = ov.set_index("المفتاح")
+        om = ov.drop_duplicates("المفتاح", keep="last").set_index("المفتاح")
         hit = C["_k"].isin(om.index)
         if hit.any():
             it_ = C.loc[hit, "_k"].map(om["البند"])
@@ -1218,12 +1221,21 @@ def _edit_lines(D, key, unlocked, limit=150):
     vend = D["المورد"].astype(str) if "المورد" in D.columns else pd.Series("", index=D.index)
     D["_party"] = [c or v or a for c, v, a in zip(party, vend, D["الحساب المقابل"].astype(str))]
     ver = st.session_state.get("cf_ovr_ver", 0)
+    _msg = st.session_state.pop("_cf_ovr_msg", "")
+    if _msg:
+        st.success(_msg)
+    _ne = st.session_state.pop("_cf_ovr_err", "")
+    if _ne:
+        st.warning(f"تعذّر حفظ التعديلات اليدوية على القرص: {_ne}. التعديل مطبَّق في الجلسة، ونزّل نسخة منه من «حالة البيانات» أسفل الصفحة.")
+    _nov = len(st.session_state.get("cf_ovr", []))
+    st.caption(f"التعديلات اليدوية المحفوظة حالياً: {_nov:,} سطراً")
     q = st.text_input("🔎 بحث باسم العميل/المورد أو البيان أو المبلغ", key=f"{key}_q", placeholder="اكتب جزءاً من الاسم أو البيان").strip()
     if q:
         hay = (D["_party"].astype(str) + " " + D["البيان"].astype(str) + " " + D["الحساب المقابل"].astype(str) + " "
                + D["الأثر النقدي"].map(lambda v: f"{v:.0f}"))
         D = D[hay.str.contains(re.escape(q), case=False, regex=True)]
     total_n = len(D)
+    D_all = D.copy()
     D = D.head(limit)
     E = pd.DataFrame({
         "_k": D["_k"].values,
@@ -1276,15 +1288,22 @@ def _edit_lines(D, key, unlocked, limit=150):
     if pick:
         tot = float(E[E["_k"].isin(pick)]["الأثر النقدي"].sum())
         st.caption(f"المحدد: {len(pick)} سطراً، الإجمالي {tot:,.0f}")
-    if b1.button(f"تطبيق على المحدد ({len(pick)})", key=f"{key}_apply_{ver}", disabled=not pick or (ni == keep and nc == keep)):
-        cur = E.set_index("_k")
+    def _do(keys, cur_i, cur_c):
         ov = st.session_state["cf_ovr"]
-        ov = ov[~ov["المفتاح"].isin(pick)]
-        add = pd.DataFrame([[k, cur.loc[k, "التصنيف"] if ni == keep else ni, cur.loc[k, "العقد"] if nc == keep else nc] for k in pick], columns=OVR_COLS)
-        st.session_state["cf_ovr"] = pd.concat([ov, add], ignore_index=True)
+        ov = ov[~ov["المفتاح"].isin(keys)]
+        add = pd.DataFrame([[k, cur_i.get(k, "") if ni == keep else ni, cur_c.get(k, "") if nc == keep else nc] for k in keys], columns=OVR_COLS)
+        st.session_state["cf_ovr"] = pd.concat([ov, add], ignore_index=True).drop_duplicates("المفتاح", keep="last")
         st.session_state["cf_ovr_ver"] = ver + 1
-        _save_ovr(st.session_state["cf_ovr"])
+        ok = _save_ovr(st.session_state["cf_ovr"])
+        st.session_state["_cf_ovr_msg"] = (f"تم تعديل {len(keys):,} سطراً" + ("" if ok else " (تعذّر الحفظ على القرص، التعديل في الجلسة فقط)"))
         st.rerun()
+    if b1.button(f"تطبيق على المحدد ({len(pick)})", key=f"{key}_apply_{ver}", disabled=not pick or (ni == keep and nc == keep)):
+        _do(pick, dict(zip(E["_k"], E["التصنيف"])), dict(zip(E["_k"], E["العقد"])))
+    if q and total_n > 0:
+        if st.button(f"تطبيق على كل نتائج البحث ({total_n:,} سطراً)", key=f"{key}_applyall_{ver}",
+                     disabled=(ni == keep and nc == keep)):
+            ks = list(D_all["_k"].values)
+            _do(ks, dict(zip(D_all["_k"], D_all[item_col])), dict(zip(D_all["_k"], D_all["العقد"])))
     if b2.button("إعادة المحدد إلى التصنيف التلقائي", key=f"{key}_reset_{ver}", disabled=not pick):
         ov = st.session_state["cf_ovr"]
         st.session_state["cf_ovr"] = ov[~ov["المفتاح"].isin(pick)].reset_index(drop=True)

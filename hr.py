@@ -643,6 +643,9 @@ BK_FILES = {  # اسم داخل الأرشيف ← (مسار الملف على �
     "hr/data/leave_saudi.csv": (LSA_FILE, "hr_lsa", False),
     "hr/data/leave_program.csv": (LPR_FILE, "hr_lpr", False),
     "hr/data/salary_snapshot.csv": (SAL_FILE, "hr_sal", False),
+    # التدفقات النقدية: التعديلات اليدوية على تصنيف السطور
+    "cashflow/overrides.csv": (os.path.join(HERE, "cashflow_overrides.csv"), "cf_ovr", True),
+    "cashflow/contractors.csv": (os.path.join(HERE, "cashflow_subs.csv"), "cf_subs", True),
     # تقارير المواقع
     "sites/map.csv": (os.path.join(HERE, "st_map.csv"), "sv_map", True),
     "sites/settings.json": (os.path.join(HERE, "st_settings.json"), "sv_cfg", True),
@@ -717,6 +720,8 @@ def restore_backup(raw):
     ss.pop("_hr_fhc", None)
     ss.pop("hr_hashes", None)
     ss.pop("sv_cfg", None)
+    for k in ("cf_ovr", "cf_ovr_ver", "cf_subs"):
+        ss.pop(k, None)
     return done
 
 
@@ -724,6 +729,7 @@ def _backup_ui(unlocked):
     _title("النسخة الاحتياطية الشاملة")
     st.markdown('<div class="hr-note">ملف واحد يجمع: العلاوات المعتمدة والمقترحة، وإعدادات الموارد البشرية (التوطين والنطاق وقواعد المهن وفرضيات الاكتواري)، وبيانات البنوك، '
                 'وملفات الموارد البشرية المرفوعة اختيارياً. احفظه بعد أي تعديل، واستعده بخطوة واحدة بعد كل إعادة تشغيل للاستضافة. '
+                'والتعديلات اليدوية على تصنيف سطور التدفقات النقدية وقائمة المقاولين، '
                 'وملفات تقارير المواقع (البونص وحركة الأصناف والتصفية وأوامر العمل والإنتاجية وجدول الربط). '
                 'التدفقات النقدية لها نسخها الاحتياطية الخاصة بها.</div>', unsafe_allow_html=True)
     if not unlocked:
