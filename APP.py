@@ -15,13 +15,14 @@ import numpy as np
 import plotly.express as px
 import io
 import importlib
-import exec_summary, zakat_calc, banks, cashflow, hr, sites
+import exec_summary, zakat_calc, banks, cashflow, hr, sites, deck
 importlib.reload(exec_summary)
 importlib.reload(zakat_calc)
 importlib.reload(banks)
 importlib.reload(cashflow)
 importlib.reload(hr)
 importlib.reload(sites)
+importlib.reload(deck)
 
 # إعدادات الصفحة الرئيسية
 st.set_page_config(
@@ -206,9 +207,10 @@ def fmt_val(val, r_type='item'):
     if isinstance(val, str):
         return val
     if r_type == 'pct':
-        return f"{val:.2f}%"
+        # السالب بين قوسين: الإشارة الناقصة تنقلب إلى يمين الرقم في الاتجاه من اليمين لليسار
+        return f"({abs(val):.2f}%)" if val < 0 else f"{val:.2f}%"
     if r_type == 'mult':
-        return f"{val:.2f}x"
+        return f"({abs(val):.2f}x)" if val < 0 else f"{val:.2f}x"
     if r_type == 'days':
         return f"{int(round(val))} يوم"
     if val < 0:
@@ -469,7 +471,8 @@ EX_CTX = dict(
 # ==========================================
 # تقسيم شاشات المنصة (8 تبويبات متكاملة)
 # ==========================================
-grp_mgmt, grp_fs, grp_zk, grp_bank, grp_proj, grp_sites, grp_hr = st.tabs([
+grp_deck, grp_mgmt, grp_fs, grp_zk, grp_bank, grp_proj, grp_sites, grp_hr = st.tabs([
+    "🎞️ العرض التقديمي",
     "📈 الإدارة والمؤشرات",
     "📑 القوائم المالية",
     "🧮 الزكاة وضريبة الدخل",
@@ -478,6 +481,8 @@ grp_mgmt, grp_fs, grp_zk, grp_bank, grp_proj, grp_sites, grp_hr = st.tabs([
     "📍 تقارير المواقع",
     "👷 الموارد البشرية",
 ])
+with grp_deck:
+    tab_deck = st.container()
 with grp_mgmt:
     tab1, tab5, tab_chk = st.tabs(["📈 الملخص التنفيذي", "📉 المؤشرات المالية الشاملة (KPIs & DuPont)", "✅ فحوصات سلامة البيانات"])
 with grp_fs:
@@ -1068,6 +1073,9 @@ cv.setup(SITES_DETAILED_DB, ASSETS_BY_SITE_DB, PAYROLL_BY_SITE_26,
          PROJECTS_DB, base_regions, build_styled_table,
          site_exec=ASSIGN_2026_BY_SITE, makkah_ops=MAKKAH_OPS_DB)
 
+with tab_deck:
+    deck.render_deck(EX_CTX, build_styled_table, cv)
+
 with tab8:
     cv.render_company_tab()
 
@@ -1149,6 +1157,11 @@ with tab_chk:
     add_ck("الإيراد 2026", "تنفيذ مقاولي الباطن: قوائم الدخل مقابل ملخص المواقع", sub_exec_total_26, site_sub, review=REV_NOTE)
     add_ck("الإيراد 2026", "المفوتر: قائمة الدخل مقابل ملخص المواقع", billed_rev_26, site_billed, explained=deferred_rev_2025,
            review="مفسَّر جزئياً: الإيراد المؤجل من 2025 (يظهر في قوائم 2025). المتبقي يُراجع مع ملخص المواقع يوم السبت")
+    site_wip = sum(d.get("open_exec_unbilled", 0) for d in ASSIGN_2026_BY_SITE.values()) + site_exec - site_billed
+    add_ck("الإيراد 2026", "المنفذ غير المفوتر: الرصيد التراكمي في نموذج الإسناد مقابل الإيراد المستحق في المركز المالي",
+           site_wip, accrued_rev_26,
+           review="الرصيد التراكمي يشمل أعمال سنوات سابقة سبق الاعتراف بإيرادها أو فوترتها خارج النموذج. "
+                  "المطابقة تحدد حجم الإيراد القابل للفوترة فعلاً")
     add_ck("التكاليف 2026", "تكلفة الرواتب: قائمة الدخل مقابل ملف الرواتب بالمواقع",
            cogs_26[0], sum(v["total_comp"] for v in PAYROLL_BY_SITE_26.values()),
            review="مفسَّر نوعياً: مصاريف مرتبطة بالعمال لا تُصرف نقداً في ملف الرواتب (مخصصات إجازات ونهاية خدمة وغيرها). يحتاج حصراً بالمبلغ")

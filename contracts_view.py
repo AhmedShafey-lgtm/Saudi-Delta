@@ -192,7 +192,14 @@ def money(v):
 
 
 def pct(v, nd=1):
-    return f"{v:.{nd}f}%"
+    """السالب بين قوسين حتى لا تنقلب الإشارة في العرض من اليمين لليسار."""
+    try:
+        v = float(v)
+    except Exception:
+        return "—"
+    if not np.isfinite(v):
+        return "—"
+    return f"({abs(v):.{nd}f}%)" if v < 0 else f"{v:.{nd}f}%"
 
 
 def safe_div(a, b, mult=1.0):
