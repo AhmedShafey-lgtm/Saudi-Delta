@@ -46,7 +46,7 @@ MONTHS_AR = {"يناير": 1, "فبراير": 2, "مارس": 3, "أبريل": 4,
              "أغسطس": 8, "اغسطس": 8, "سبتمبر": 9, "أكتوبر": 10, "اكتوبر": 10, "نوفمبر": 11, "ديسمبر": 12}
 ISSUE, EST, RET = "صرف أمر العمل", "أمر العمل", "استلام صرف أمر العمل"
 DEFAULT_CFG = {"site": "الرياض", "rd_factor": 18.0, "alloc": "نسبة البونص", "m_from": 3, "m_to": 9, "year": 2026,
-               "asphalt_code": "306010001", "asphalt_pct": 40.0}
+               "asphalt_code": "306010001", "asphalt_pct": 40.0, "emg_pct": 45.0}
 
 
 def _title(t):
@@ -174,16 +174,29 @@ def parse_bonus(raw, site, fname=""):
         cols[j] = (" | ".join([p for p in parts if p]), _norm(codes[j]) if codes[j] else "")
     # الشهر: من اسم ورقة حركة الأصناف داخل الملف، وإلا من اسم الملف
     mon = _month_of([s.title for s in wb.worksheets if "حركة" in s.title] + [fname])
+    # صفوف الأسعار داخل التقرير نفسه: سعر البند في العقد، ثم سعره بعد نسبة الطوارئ
+    def _row(pre):
+        return next((i for i, r in enumerate(rows) if r[0] and str(r[0]).strip().startswith(pre)), None)
+    iq, ie = _row("الاجمالي للتنفيذ"), _row("الاجمالي للطواريء")
+    P = rows[iq + 1] if iq is not None and iq + 1 < len(rows) else [None] * 80
+    PE = rows[ie + 1] if ie is not None and ie + 1 < len(rows) else P
+    num = lambda v: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else np.nan
+    rep_total = next((num(r[12]) for r in rows if r[10] and "إجمالى الأعمال" in str(r[10])), np.nan)
+    end = iq if iq is not None else len(rows)
     out = []
-    for r in rows[h + 1:]:
+    for r in rows[h + 1: end]:
         w = _wo(r[1]) if r[1] is not None else ""
         if not w:
             continue
+        em = len(w) < 9  # أوامر الطوارئ ترد بثمانية أرقام وتُسعَّر بسعر العقد بعد نسبة الطوارئ
         for j, (nm, cd) in cols.items():
-            v = r[j]
-            if isinstance(v, (int, float)) and v and not isinstance(v, bool):
-                out.append((site, mon, w, nm, cd, float(v), fname))
-    B = pd.DataFrame(out, columns=["الموقع", "الشهر", "أمر العمل", "بند الأعمال", "رمز البند", "الكمية", "المصدر"])
+            v = num(r[j])
+            if pd.notna(v) and v:
+                pr = num(PE[j]) if em else num(P[j])
+                out.append((site, mon, w, "طوارئ" if em else "مشروع", nm, cd, v, pr, v * pr if pd.notna(pr) else np.nan,
+                            rep_total, fname))
+    B = pd.DataFrame(out, columns=["الموقع", "الشهر", "أمر العمل", "النوع", "بند الأعمال", "رمز البند", "الكمية",
+                                   "سعر البند", "القيمة", "إجمالي التقرير", "المصدر"])
     N = pd.DataFrame(columns=["الموقع", "الشهر", "أمر العمل", "البند", "البونص", "الصرف", "الفرق", "الملاحظة", "رد أمين المستودع", "المصدر"])
     sn = [s.title for s in wb.worksheets if "ملاحظات البونص" in s.title]
     if sn:
@@ -430,10 +443,20 @@ def _save_cfg(cfg):
 
 # ---------------- الحسابات ----------------
 def bonus_value(bon, cpr, cfg, site):
-    """تسعير بنود البونص بأسعار العقد للموقع، مع قاعدة نسبة بند الإسفلت."""
+    """قيمة المنفذ: تُؤخذ من أسعار تقرير البونص نفسه، وتُكمَّل من جدول أسعار العقد عند غيابها."""
     B = bon[bon["الموقع"] == site].copy()
     if not len(B):
         return B.assign(**{"سعر الوحدة": [], "القيمة": []})
+    if "القيمة" in B.columns and B["القيمة"].notna().any():
+        B["سعر الوحدة"] = B.get("سعر البند")
+        miss = B["القيمة"].isna()
+        if miss.any() and len(cpr) and site in cpr.columns:
+            pr = cpr.drop_duplicates("رمز البند").set_index("رمز البند")[site].to_dict()
+            f = np.where(B.loc[miss, "النوع"] == "طوارئ", 1.0 + float(cfg.get("emg_pct", 45.0)) / 100.0, 1.0)
+            p = B.loc[miss, "رمز البند"].map(lambda c: pr.get(str(c).strip(), np.nan)).values * f
+            B.loc[miss, "سعر الوحدة"] = p
+            B.loc[miss, "القيمة"] = B.loc[miss, "الكمية"].values * p
+        return B
     col = site if (len(cpr) and site in cpr.columns) else None
     pr = cpr.drop_duplicates("رمز البند").set_index("رمز البند")[col].to_dict() if col else {}
     asph = pr.get(str(cfg.get("asphalt_code", "306010001")))
@@ -733,9 +756,16 @@ def _productivity(prd, bon, mov, pay, ipr, cpr, mp, cfg, site, build):
                                        _fmt(T["ops"]), _fmt(cost_t), _fmt(T["team"] - cost_t)]))
     st.table(build(rows, ["الشهر", "تنفيذ فرق الشركة", "مقاولو الباطن", "إجمالي التنفيذ", "المنفذ بالبونص",
                           "نسبة البونص", "تكلفة الرواتب", "المواد التشغيلية", "إجمالي التكلفة", "هامش فرق الشركة"]))
-    if T["team"] and T["bon"] and T["bon"] / T["team"] < 0.95:
-        _note(f"المنفذ المحسوب من البونص أقل من تنفيذ فرق الشركة في تقرير الموقع بمقدار {_fmt(T['team'] - T['bon'])} ريال. "
-              "راجع بنود البونص غير المسعّرة والمنفذ الجزئي للمشاريع الكبيرة.")
+    if len(B) and "إجمالي التقرير" in B.columns:
+        chk = B.groupby("الشهر")["إجمالي التقرير"].first()
+        bad = [(int(m), float(chk.get(m, np.nan)), float(bm.get(m, np.nan))) for m in range(m1, m2 + 1)
+               if pd.notna(chk.get(m, np.nan)) and abs(float(bm.get(m, 0)) - float(chk.get(m))) > max(1.0, 0.01 * float(chk.get(m)))]
+        if bad:
+            _note("أشهر لا يطابق فيها المحسوب إجمالي تقرير البونص نفسه: " +
+                  "، ".join(f"شهر {m}: التقرير {_fmt(a)} والمحسوب {_fmt(b)}" for m, a, b in bad))
+    if T["team"] and T["bon"] and abs(T["bon"] / T["team"] - 1) > 0.02:
+        _note(f"فرق بين المنفذ من تقارير البونص وتنفيذ فرق الشركة في تقرير الموقع: {_fmt(T['team'] - T['bon'])} ريال. "
+              "راجع أشهر البونص الناقصة أو المنفذ الجزئي للمشاريع الكبيرة.")
     _note("تكلفة مقاولي الباطن غير محمّلة هنا، فهامش فرق الشركة لا يشملها.")
     if len(P):
         with st.expander("تقرير الموقع كما ورد"):

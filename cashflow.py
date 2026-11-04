@@ -550,6 +550,8 @@ def parse_activities(raw):
 
 def detect_ref(raw):
     wb = _open_xlsx(raw)
+    if any("المقاولون" in n for n in wb.sheetnames):
+        return "مقاولون"
     if "تفصيلي" in wb.sheetnames:
         return "عميل"
     ws0 = wb.active
@@ -558,6 +560,78 @@ def detect_ref(raw):
             return "أصل"
     hdr = [str(c.value or "") for c in ws0[1]]
     return "نشاط" if any("الاعمال" in h for h in hdr) else "مورد"
+
+
+def parse_contractors(raw):
+    """قائمة المقاولين بعد تعبئة الموقع: الاسم ونوع العمل والمسدد 2026 والعقد المحدد لكل مقاول."""
+    wb = _open_xlsx(raw)
+    out = []
+    for ws in wb.worksheets:
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            continue
+        hdr = [str(x or "").strip() for x in rows[0]]
+        idx = {h: j for j, h in enumerate(hdr) if h}
+        j_name = next((j for h, j in idx.items() if h in ("المقاول", "المورد")), None)
+        j_amt = next((j for h, j in idx.items() if "المسدد" in h), None)
+        if j_name is None or j_amt is None:
+            continue
+        j_ctr = next((j for h, j in idx.items() if "العقد" in h), None)
+        j_typ = next((j for h, j in idx.items() if h.startswith("نوع العمل")), None)
+        for r in rows[1:]:
+            if r[j_name] is None:
+                continue
+            amt = pd.to_numeric(r[j_amt], errors="coerce")
+            ctr = str(r[j_ctr] or "").strip() if j_ctr is not None else ""
+            # قد يكتب المستخدم العقد في عمود مجاور، فيؤخذ أول نص يدل على عقد أو على جميع العقود
+            def _isc(t):
+                t = str(t)
+                return ("جميع" in t and "عقود" in t) or contract_of(t) != NO_CONTRACT
+            if not _isc(ctr):
+                ctr = next((str(v).strip() for v in r if isinstance(v, str) and _isc(v)), ctr)
+            out.append({"المقاول": str(r[j_name]).strip(), "نوع العمل": str(r[j_typ] or "").strip() if j_typ is not None else "",
+                        "المسدد 2026": float(amt) if pd.notna(amt) else 0.0, "العقد": ctr,
+                        "الورقة": ws.title})
+    D = pd.DataFrame(out)
+    if len(D):
+        D["العقد الموحد"] = D["العقد"].map(lambda t: "جميع العقود" if "جميع" in str(t) else
+                                           ("الإدارة" if "دار" in str(t) else contract_of(str(t))))
+    return D
+
+
+SUB_ITEM = "دفعات لمقاولي الباطن"
+
+
+def sub_weights():
+    """أوزان توزيع مصاريف مقاولي الباطن المقيدة على الإدارة: مسدد كل مقاول حسب العقد المحدد له،
+    وما كُتب له «جميع العقود» يوزَّع على العقود بنفس النسب. ما يخص الإدارة يبقى عليها."""
+    S = st.session_state.get("cf_subs")
+    if S is None or not len(S):
+        return None
+    ctr_only = [c for c in CONTRACT_OPTS if c != "الإدارة"]
+    W = S[S["العقد الموحد"].isin(ctr_only)].groupby("العقد الموحد")["المسدد 2026"].sum()
+    W = W[W > 0]
+    if not len(W) or W.sum() <= 0:
+        return None
+    return W / W.sum()
+
+
+def _alloc_subs(X):
+    """دفعات مقاولي الباطن المقيدة على مركز الإدارة في حسابات المشاريع توزَّع على العقود بأوزان قائمة المقاولين."""
+    w = sub_weights()
+    st.session_state["_cf_sub_ok"] = w is not None
+    if w is None:
+        return X
+    sel = (X["العقد"] == "الإدارة") & (X["البند"] == SUB_ITEM) & ~X["كود الحساب"].astype(str).str.startswith("502")
+    if not sel.any():
+        return X
+    rows = []
+    for _, r in X[sel].iterrows():
+        for ctr, k in w.items():
+            d = r.to_dict()
+            d["العقد"], d["المبلغ"], d["موزع"] = ctr, float(r["المبلغ"]) * float(k), True
+            rows.append(d)
+    return pd.concat([X[~sel], pd.DataFrame(rows)], ignore_index=True)
 
 
 def _act_lookup(actmap, vendor):
@@ -681,6 +755,8 @@ def expenses_classified():
     X["موزع"] = False
     if st.session_state.get("cf_alloc_res", True):
         X = _alloc_residency(X)
+    if st.session_state.get("cf_alloc_sub", True):
+        X = _alloc_subs(X)
     return X
 
 
@@ -750,6 +826,7 @@ def site_expenses(C_all, X, months_all, sites, excl_dep=True):
 
 
 ASSET_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_assets.csv")
+SUBS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_subs.csv")
 ASSET_COLS = ["الشهر", "تاريخ الشراء", "الموقع", "بيان الأصل", "التكلفة"]
 
 
@@ -988,6 +1065,11 @@ def _state():
         ss["cf_rules"] = _load_rules()
     if "cf_refs" not in ss:
         ss["cf_refs"] = _load_refs()
+    if "cf_subs" not in ss:
+        try:
+            ss["cf_subs"] = pd.read_csv(SUBS_FILE) if os.path.exists(SUBS_FILE) else None
+        except Exception:
+            ss["cf_subs"] = None
     if "cf_assets" not in ss:
         ss["cf_assets"] = _load_assets()
     if "cf_exp" not in ss:
@@ -1320,6 +1402,17 @@ def render_cashflow(ctx, build_styled_table):
                 continue
             try:
                 kind = detect_ref(raw)
+                if kind == "مقاولون":
+                    _c = parse_contractors(raw)
+                    st.session_state["cf_subs"] = _c
+                    try:
+                        _c.to_csv(SUBS_FILE, index=False, encoding="utf-8-sig")
+                    except Exception:
+                        pass
+                    done.add(h)
+                    n_ok = int(_c["العقد الموحد"].isin(CONTRACT_OPTS).sum())
+                    st.success(f"{f.name}: قائمة المقاولين، {len(_c)} اسماً منها {n_ok} محدد لها عقد بمسدد {_c[_c['العقد الموحد'].isin(CONTRACT_OPTS)]['المسدد 2026'].sum():,.0f} ريال.")
+                    continue
                 if kind == "أصل":
                     _a = parse_assets(raw)
                     st.session_state["cf_assets"] = _a
@@ -1482,7 +1575,10 @@ def render_cashflow(ctx, build_styled_table):
     # ---------- تقرير التشغيل حسب العقد ----------
     st.markdown('<div class="cf-title">تقرير التشغيل حسب العقد: التحصيلات (نقدي) والمصاريف (حسب قائمة الدخل)</div>', unsafe_allow_html=True)
     st.checkbox("توزيع الإقامات والتأشيرات والرسوم الحكومية المقيدة على الإدارة بحسب عدد العمالة الأجنبية في كل عقد (من رواتب الموارد البشرية)", value=True, key="cf_alloc_res")
+    st.checkbox("توزيع دفعات مقاولي الباطن المقيدة على الإدارة بحسب مواقع المقاولين (من قائمة المقاولين المرفوعة)", value=True, key="cf_alloc_sub")
     X_all = expenses_classified()
+    if st.session_state.get("cf_alloc_sub", True) and not st.session_state.get("_cf_sub_ok", True):
+        st.warning("لم يُطبَّق توزيع مقاولي الباطن: ارفع قائمة المقاولين بعد تحديد موقع كل مقاول في خانة التقارير المرجعية.")
     if st.session_state.get("cf_alloc_res", True) and not st.session_state.get("_cf_alloc_ok", True):
         st.warning("لم يُطبَّق توزيع الإقامات: لا توجد بيانات موظفين ورواتب محمّلة في تبويب الموارد البشرية. ارفع ملف الموظفين وكشف الرواتب (أو تفاصيل الرواتب الشهرية) هناك ثم أعد فتح هذا التقرير، وستبقى الأرقام كما هي إلى ذلك الحين.")
     if not len(X_all):
