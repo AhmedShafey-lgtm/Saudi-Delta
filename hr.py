@@ -17,13 +17,60 @@ SET_FILE = os.path.join(HERE, "hr_settings.json")
 CSS = """
 <style>
   .hr-title { direction: rtl; text-align: right; background: linear-gradient(90deg,#1E3A8A,#3B5FC4); color:#fff;
-              padding:9px 14px; border-radius:6px; margin:18px 0 8px 0; font-weight:700; font-size:1.1rem; }
+              padding:11px 16px; border-radius:8px; margin:20px 0 10px 0; font-weight:700; font-size:1.18rem;
+              letter-spacing:.2px; }
+  .hr-sub { direction: rtl; text-align: right; color:#1E3A8A; border-right:4px solid #3B5FC4;
+            background:#EEF2FB; padding:7px 13px; border-radius:6px; margin:16px 0 6px 0;
+            font-weight:700; font-size:1.04rem; }
+  .hr-sub .tag { float:left; font-weight:700; font-size:.92rem; padding:1px 10px; border-radius:999px; }
+  .hr-sub .ok { background:#DCFCE7; color:#14532D; } .hr-sub .no { background:#FEE2E2; color:#991B1B; }
+  .hr-sub .na { background:#E2E8F0; color:#475569; }
   .hr-note { direction: rtl; text-align: right; background:#FFF7E0; border-right:4px solid #F59E0B; color:#7A4B00;
-             padding:8px 12px; border-radius:6px; font-size:0.95rem; margin:6px 0; }
+             padding:9px 13px; border-radius:6px; font-size:1.0rem; line-height:1.75; margin:7px 0; }
+  /* بطاقات المؤشرات: رقم كبير واضح بدل خط الميتريك الصغير */
+  .hr-kpis { display:flex; flex-wrap:wrap; gap:10px; margin:8px 0 14px 0; }
+  .hr-kpi { flex:1 1 170px; min-width:158px; background:#F8FAFC; border:1px solid #E2E8F0;
+            border-top:3px solid #1E3A8A; border-radius:9px; padding:11px 13px; }
+  .hr-kpi .lbl { color:#475569; font-size:.88rem; font-weight:600; line-height:1.5; }
+  .hr-kpi .val { color:#1E3A8A; font-size:1.55rem; font-weight:800; line-height:1.3; margin-top:2px;
+                 font-variant-numeric: tabular-nums; }
+  .hr-kpi .sub { color:#64748B; font-size:.82rem; margin-top:2px; }
+  .hr-kpi.ok   { border-top-color:#0E9F6E; } .hr-kpi.ok .val   { color:#0E7C57; }
+  .hr-kpi.bad  { border-top-color:#B91C1C; } .hr-kpi.bad .val  { color:#B91C1C; }
+  .hr-kpi.gold { border-top-color:#C9A227; } .hr-kpi.gold .val { color:#8A6D12; }
+  /* الجداول: خط أكبر وصفوف أوضح */
   [class*="st-key-hr_grid"] [data-testid="stDataFrame"], [class*="st-key-hr_grid"] [data-testid="stDataFrame"] * {
       direction: ltr !important; text-align: left !important; }
+  [class*="st-key-hr_grid"] [data-testid="stDataFrame"] { font-size: 1.02rem !important; }
+  [class*="st-key-hr_grid"] [role="columnheader"] { font-weight: 700 !important; font-size: 1.0rem !important; }
+  [class*="st-key-hr_grid"] [role="gridcell"] { font-size: 1.0rem !important; }
 </style>
 """
+
+
+def _sub(text, tag="", tone="na"):
+    """عنوان فرعي خفيف للمجموعات مع وسم حالة على اليسار."""
+    t = f'<span class="tag {tone}">{tag}</span>' if tag else ""
+    st.markdown(f'<div class="hr-sub">{t}{text}</div>', unsafe_allow_html=True)
+
+
+def _box(key):
+    """حاوية بمفتاح لتطبيق التنسيق، مع بديل للإصدارات التي لا تدعم المفتاح."""
+    try:
+        return st.container(key=key)
+    except TypeError:
+        return st.container()
+
+
+def _kpis(items):
+    """بطاقات مؤشرات: (العنوان، القيمة، سطر فرعي، النغمة: '' أو ok أو bad أو gold)."""
+    h = '<div class="hr-kpis">'
+    for it in items:
+        lbl, val = it[0], it[1]
+        sub = it[2] if len(it) > 2 else ""
+        tone = it[3] if len(it) > 3 else ""
+        h += f'<div class="hr-kpi {tone}"><div class="lbl">{lbl}</div><div class="val">{val}</div><div class="sub">{sub}</div></div>'
+    st.markdown(h + "</div>", unsafe_allow_html=True)
 
 GROUPS = ["مهندسون", "محاسبون", "فنيون", "عمالة", "إداريون ومهن أخرى"]
 # قواعد تصنيف المهنة إلى مجموعة رئيسية (أول قاعدة تنطبق)
@@ -617,7 +664,8 @@ def _data_tab(unlocked, emp, pay, sett):
             _save_settings(new)
     st.caption("مرجع: نسب التوطين المطلوبة حسب منصة قوى")
     ref = pd.DataFrame(PORTAL_REF, columns=["المجموعة المهنية", "النسبة المطلوبة %", "الالتزام بالتوطين"])
-    st.dataframe(ref, hide_index=True, use_container_width=True)
+    with _box("hr_grid_ref"):
+        st.dataframe(ref, hide_index=True, use_container_width=True)
     with st.expander("قواعد تصنيف المهنة إلى مجموعة رئيسية (أول قاعدة تنطبق، وما لا ينطبق يُصنَّف عمالة)"):
         rr = pd.DataFrame(sett["prof_rules"], columns=["جزء من المهنة", "المجموعة"])
         r3 = st.data_editor(rr, num_rows="dynamic", use_container_width=True, hide_index=True, disabled=not unlocked, key="hr_rules_ed",
@@ -764,23 +812,24 @@ def _summary(A, pay, sett, ym, build):
     fo = int((A["الجنسية"] == "أجنبي").sum())
     un = n_all - sa - fo
     _title("الملخص العام للعمالة")
-    c = st.columns(4)
-    c[0].metric("إجمالي العمالة", f"{n_all:,}")
-    c[1].metric("سعوديون", f"{sa:,}")
-    c[2].metric("أجانب", f"{fo:,}")
-    c[3].metric("نسبة السعودة", _pct(sa, n_all))
-    c = st.columns(4)
-    c[0].metric("النطاق", sett["band"])
     mm = pay[pay["ym"] == ym] if ym else pay.iloc[0:0]
-    c[1].metric(f"إجمالي الرواتب الشهرية ({ym or '—'})", _fmt(mm["اجمالي الراتب"].sum()))
-    c[2].metric("التأمينات الاجتماعية الشهرية", _fmt(mm["تأمين اجتماعي"].sum()))
     full = [m for m in sorted(pay["ym"].unique()) if m.startswith(ym[:4]) and m <= ym and pay[pay["ym"] == m]["الرقم الوظيفي"].nunique() > 0.8 * len(mm["الرقم الوظيفي"].unique())] if ym else []
     iq_avg = float(np.mean([pay[pay["ym"] == m]["الاقامات"].sum() for m in full])) if full else 0.0
-    c[3].metric(f"متوسط الإقامات الشهرية (متوسط {len(full)} أشهر)", _fmt(iq_avg))
-    c = st.columns(3)
-    c[0].metric("التأمين الطبي الشهري", _fmt(mm["تأمين طبي شهري"].sum()))
-    c[1].metric("على رأس العمل", f"{int((A['الموقف'] == 'على رأس العمل').sum()):,}")
-    c[2].metric("في إجازة", f"{int((A['الموقف'] == 'في إجازة').sum()):,}")
+    on_job = int((A["الموقف"] == "على رأس العمل").sum())
+    on_lv = int((A["الموقف"] == "في إجازة").sum())
+    _kpis([
+        ("إجمالي العمالة", f"{n_all:,}", f"على رأس العمل {on_job:,} · في إجازة {on_lv:,}"),
+        ("سعوديون", f"{sa:,}", f"أجانب {fo:,}" + (f" · غير محدد {un:,}" if un else ""), "ok"),
+        ("نسبة السعودة", _pct(sa, n_all), f"النطاق: {sett['band']}", "gold"),
+        (f"إجمالي الرواتب ({ym or '—'})", _fmt(mm["اجمالي الراتب"].sum()), "شهر الرواتب المكتمل الأخير"),
+    ])
+    _kpis([
+        ("التأمينات الاجتماعية", _fmt(mm["تأمين اجتماعي"].sum()), "شهرياً"),
+        ("التأمين الطبي", _fmt(mm["تأمين طبي شهري"].sum()), "شهرياً"),
+        ("متوسط الإقامات الشهرية", _fmt(iq_avg), f"متوسط {len(full)} أشهر مكتملة"),
+        ("تكلفة العمالة الشهرية", _fmt(mm["اجمالي الراتب"].sum() + mm["تأمين اجتماعي"].sum() + mm["تأمين طبي شهري"].sum() + iq_avg),
+         "رواتب + تأمينات + متوسط إقامات", "gold"),
+    ])
     st.caption(f"الجنسية تُستنتج من رقم الهوية/الإقامة (يبدأ بـ1 سعودي و2 أجنبي)، وعند غيابه من وجود رسم إقامة في الرواتب؛ غير المحدد: {un}. "
                f"للمطابقة: شهادة التأمينات {sett['gosi_date']}: سعوديون {sett['gosi_saudi']:,} وأجانب {sett['gosi_foreign']:,} "
                f"(مقابل {sa:,} و{fo:,} في ملف الموظفين).")
@@ -788,7 +837,6 @@ def _summary(A, pay, sett, ym, build):
         G = A[A["المجموعة"] == g]
         if not len(G):
             continue
-        _title(f"مجموعة: {g}")
         tot = len(G)
         s = int((G["الجنسية"] == "سعودي").sum())
         f = int((G["الجنسية"] == "أجنبي").sum())
@@ -796,6 +844,8 @@ def _summary(A, pay, sett, ym, build):
         need = int(np.ceil(tot * rq / 100.0 - 1e-9))
         cur = s / tot * 100 if tot else 0
         stat = "—" if rq == 0 else ("ملتزم" if s >= need else f"عجز {need - s}")
+        _sub(f"مجموعة: {g} — {tot:,} موظفاً، السعودة {cur:.1f}%" + (f" والمطلوب {rq:.0f}%" if rq else ""),
+             stat if rq else "لا نسبة مطلوبة", ("ok" if (rq and s >= need) else ("no" if rq else "na")))
         c1, c2 = st.columns(2)
         with c1:
             st.caption("التصنيف: أجنبي وسعودي ونسبة التوطين")
@@ -829,7 +879,7 @@ def _browse(V):
     q = c3.text_input("بحث بالاسم", key="hr_q").strip()
     Gt = G.reset_index()
     Gt = Gt[list(Gt.columns[1:][::-1]) + [Gt.columns[0]]]
-    with st.container(key="hr_grid_sum"):
+    with _box("hr_grid_sum"):
         st.dataframe(Gt.style.format({"العدد": "{:,.0f}", "سعوديون": "{:,.0f}", "أجانب": "{:,.0f}", "إجمالي الرواتب": "{:,.0f}"}), hide_index=True, use_container_width=True,
                      height=min(380, 38 + 35 * len(Gt)))
     if val != "الكل":
@@ -841,7 +891,7 @@ def _browse(V):
         T[c] = T[c].dt.strftime("%Y-%m-%d")
     st.caption(f"{len(T):,} موظفاً")
     T = T[list(T.columns[::-1])]
-    with st.container(key="hr_grid_emp"):
+    with _box("hr_grid_emp"):
         st.dataframe(T.style.format({"الراتب الأساسي": "{:,.0f}", "إجمالي الراتب": "{:,.0f}"}), hide_index=True, use_container_width=True, height=480)
     st.download_button("⬇️ تنزيل القائمة (CSV)", data=D.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"), file_name="hr_employees.csv", mime="text/csv", key="hr_dl")
 
@@ -916,7 +966,7 @@ def _increases(A, unlocked, ym):
     Gt = G.reset_index()
     Gt = Gt[list(Gt.columns[1:][::-1]) + [Gt.columns[0]]]
     st.markdown("**الأثر على مستوى العقد / الشركة**")
-    with st.container(key="hr_grid_incg"):
+    with _box("hr_grid_incg"):
         st.dataframe(Gt.style.format({c: "{:,.0f}" for c in Gt.columns if c != "العقد"}), hide_index=True, use_container_width=True, height=min(380, 38 + 35 * len(Gt)))
     # ---- تفصيل الموظفين
     st.markdown("**تصفية العمالة (تصنيف رئيسي: العقد، ثم تصنيفات فرعية)**")
@@ -946,12 +996,11 @@ def _increases(A, unlocked, ym):
     D["إجازة مستحقة منذ آخر إجازة (يوم)"] = (D["المدة من آخر إجازة (شهر)"].clip(lower=0).fillna(0) / 12 * ann).round(1)
     D = pd.concat([D, imp], axis=1)
     d = D["الزيادة المعتمدة"]
-    cc = st.columns(5)
-    cc[0].metric("إجمالي الزيادة الشهرية", _fmt(d.sum()))
-    cc[1].metric("الأثر النقدي 12 شهراً", _fmt(D["أثر نقدي 12 شهراً"].sum()))
-    cc[2].metric("أثر مخصص الإجازة", _fmt(D["أثر على مخصص الإجازة"].sum()))
-    cc[3].metric("أثر مخصص نهاية الخدمة", _fmt(D["أثر على مخصص نهاية الخدمة"].sum()))
-    cc[4].metric("إجمالي الأثر", _fmt(D["إجمالي الأثر"].sum()))
+    _kpis([("إجمالي الزيادة الشهرية", _fmt(d.sum()), f"{int((d > 0).sum()):,} موظفاً"),
+           ("الأثر النقدي 12 شهراً", _fmt(D["أثر نقدي 12 شهراً"].sum()), "رواتب سنة كاملة"),
+           ("أثر مخصص الإجازة", _fmt(D["أثر على مخصص الإجازة"].sum()), "غير نقدي"),
+           ("أثر مخصص نهاية الخدمة", _fmt(D["أثر على مخصص نهاية الخدمة"].sum()), "غير نقدي"),
+           ("إجمالي الأثر", _fmt(D["إجمالي الأثر"].sum()), "نقدي وغير نقدي", "gold")])
     D = D.sort_values(["المهنة", "الاسم"]).reset_index(drop=True)
     D["تاريخ التعيين"] = D["تاريخ التعيين"].dt.strftime("%Y-%m-%d")
     cols = ["الاسم", "المهنة", "تاريخ التعيين", "الراتب الأساسي", "تاريخ آخر زيادة", "مبلغ آخر زيادة", "المدة من آخر إجازة (شهر)", "إجازة مستحقة منذ آخر إجازة (يوم)",
@@ -963,7 +1012,7 @@ def _increases(A, unlocked, ym):
     Tr = T[list(T.columns[::-1])]
     editable = unlocked and scen == "المعتمدة"
     ed = None
-    with st.container(key="hr_grid_inc"):
+    with _box("hr_grid_inc"):
         if editable:
             st.caption("اكتب مبلغ الزيادة الشهرية أمام الموظف في عمود «الزيادة المعتمدة» ثم اضغط حفظ. (باقي الأعمدة للعرض ولا تتحدّث إلا بعد الحفظ.)")
             cfg = {c: st.column_config.NumberColumn(c, format="%,.0f") for c in money}
@@ -1058,9 +1107,11 @@ def _provisions(A, sett, build):
                            file_name="leave_provision.csv", mime="text/csv", key="hr_lv_dl")
         flag = pd.concat([neg.assign(السبب="رصيد سالب"), bad.assign(السبب="قيمة غير صالحة في الملف")])[["الرقم الوظيفي", "الاسم", "رصيد أيام", "السبب"]]
         if len(flag):
-            st.dataframe(flag, hide_index=True, use_container_width=True)
+            with _box("hr_grid_flag"):
+                st.dataframe(flag, hide_index=True, use_container_width=True)
         if len(miss):
-            st.dataframe(miss[["الرقم الوظيفي", "الاسم", "المهنة"]], hide_index=True, use_container_width=True)
+            with _box("hr_grid_miss"):
+                st.dataframe(miss[["الرقم الوظيفي", "الاسم", "المهنة"]], hide_index=True, use_container_width=True)
 
 
 def _act_settings(sett):
@@ -1138,11 +1189,10 @@ def _actuarial(A, sett, eosb, build):
     dbo_old, _, _ = ac.run(D, a, dr=dro)
     fin = float(dbo_old.sum() - gross)  # ربح عند ارتفاع الخصم
     exp_adj = -remeas - fin
-    cc = st.columns(4)
-    cc[0].metric("الالتزام الإجمالي (DBO)", _fmt(gross))
-    cc[1].metric("الدفعات المقدمة للمستمرين", _fmt(adv_close))
-    cc[2].metric("صافي الالتزام", _fmt(net))
-    cc[3].metric("عدد الموظفين", f"{len(D):,}")
+    _kpis([("الالتزام الإجمالي (DBO)", _fmt(gross), "القيمة الحالية للمنافع"),
+           ("الدفعات المقدمة للمستمرين", _fmt(adv_close), "تُخصم من الالتزام"),
+           ("صافي الالتزام", _fmt(net), "المثبت في المركز المالي", "gold"),
+           ("عدد الموظفين", f"{len(D):,}", "ضمن التقييم")])
     fmtn = lambda v: _fmt(-v) if v > 0 else f"({_fmt(abs(v))})" if v < 0 else "0"  # التزام سالب كما في التقرير
     _title("قائمة المركز المالي والأرباح والخسائر")
     rows = [("item", "القيمة الحالية للالتزام (DBO) الإجمالي", [fmtn(gross)]),
@@ -1205,7 +1255,7 @@ def _actuarial(A, sett, eosb, build):
     except Exception:
         st.download_button("⬇️ تنزيل الالتزام لكل موظف (CSV)", data=T.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"), file_name=f"Per_Employee_Liability_{vd.year}.csv", mime="text/csv", key="act_dl")
     with st.expander("أكبر 50 موظفاً من حيث الالتزام"):
-        with st.container(key="hr_grid_act"):
+        with _box("hr_grid_act"):
             Tt = T.head(50)
             Tt = Tt[list(Tt.columns[::-1])]
             st.dataframe(Tt.style.format({"الراتب الشهري": "{:,.0f}", "العمر": "{:.1f}", "سنوات الخدمة": "{:.1f}", "الالتزام": "{:,.0f}", "منافع متوقعة": "{:,.0f}", "تكلفة خدمة متوقعة": "{:,.0f}"}),
@@ -1247,5 +1297,5 @@ def _suggested(V, A, pay, ym, sett, build):
         if "نهاية العقد" in X.columns:
             X["نهاية العقد"] = X["نهاية العقد"].dt.strftime("%Y-%m-%d")
         X = X[list(X.columns[::-1])].head(200)
-        with st.container(key="hr_grid_" + key):
+        with _box("hr_grid_" + key):
             st.dataframe(X, hide_index=True, use_container_width=True, height=300)

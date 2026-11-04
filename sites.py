@@ -30,6 +30,15 @@ CSS = """
              padding:8px 12px; border-radius:6px; font-size:0.95rem; margin:6px 0; }
   [class*="st-key-sv_grid"] [data-testid="stDataFrame"], [class*="st-key-sv_grid"] [data-testid="stDataFrame"] * {
       direction: ltr !important; text-align: left !important; }
+  [class*="st-key-sv_grid"] [data-testid="stDataFrame"] { font-size: 1.02rem !important; }
+  [class*="st-key-sv_grid"] [role="columnheader"] { font-weight:700 !important; font-size:1.0rem !important; }
+  [class*="st-key-sv_grid"] [role="gridcell"] { font-size: 1.0rem !important; }
+  .sv-start { direction: rtl; text-align: right; background:#F8FAFC; border:1px solid #E2E8F0;
+              border-right:4px solid #0E9F6E; border-radius:10px; padding:14px 18px; margin:10px 0; }
+  .sv-start h4 { margin:0 0 8px 0; color:#065F46; font-size:1.08rem; }
+  .sv-start ol { margin:0; padding-right:20px; line-height:2.0; color:#111827; font-size:1.0rem; }
+  .sv-start .f { background:#fff; border:1px solid #E2E8F0; border-radius:6px; padding:2px 8px;
+                 font-weight:600; color:#0B2A6F; }
 </style>
 """
 
@@ -47,6 +56,33 @@ MONTHS_AR = {"يناير": 1, "فبراير": 2, "مارس": 3, "أبريل": 4,
 ISSUE, EST, RET = "صرف أمر العمل", "أمر العمل", "استلام صرف أمر العمل"
 DEFAULT_CFG = {"site": "الرياض", "rd_factor": 18.0, "alloc": "نسبة البونص", "m_from": 3, "m_to": 9, "year": 2026,
                "asphalt_code": "306010001", "asphalt_pct": 40.0, "emg_pct": 45.0}
+
+
+def _box(key):
+    """حاوية بمفتاح لتطبيق التنسيق، مع بديل للإصدارات التي لا تدعم المفتاح."""
+    try:
+        return st.container(key=key)
+    except TypeError:
+        return st.container()
+
+
+def _onboard(where=""):
+    """شاشة البداية: ماذا يُرفع وبأي ترتيب، تظهر ما دامت بيانات الموقع غير محمّلة."""
+    st.markdown(
+        '<div class="sv-start"><h4>ابدأ من تبويب «⚙️ البيانات والإعدادات»: اختر الموقع ثم ارفع ملفاته دفعة واحدة</h4>'
+        '<ol>'
+        '<li><span class="f">تقارير البونص الشهرية</span> — ملف لكل شهر، ومنه تُقرأ كميات البنود المنفذة وأسعارها وملاحظات المراجع.</li>'
+        '<li><span class="f">تقرير حركة الأصناف</span> — صرف المواد على أوامر العمل، ويُصحَّح تكرار التصدير آلياً.</li>'
+        '<li><span class="f">تقرير تصفية أوامر العمل</span> — المقايسة والمصروف والمتبقي لكل أمر عمل وصنف.</li>'
+        '<li><span class="f">موقف أوامر العمل من الكهرباء</span> — ملف لكل منطقة، ومنه حالة كل أمر وشهادات الإنجاز.</li>'
+        '<li><span class="f">تقرير إنتاجية الموقع</span> — التنفيذ الشهري لفرق الشركة ومقاولي الباطن.</li>'
+        '<li><span class="f">تقرير الرواتب التفصيلي</span> و<span class="f">أسعار الأصناف</span> و<span class="f">أسعار بنود العقد</span> — لحساب التكلفة والقيمة المنفذة.</li>'
+        '</ol>'
+        '<div style="margin-top:10px;color:#475569;font-size:.95rem">البرنامج يتعرّف على نوع كل ملف من محتواه، '
+        'ويستنتج شهر تقرير البونص من اسم الملف أو من أوراقه. بعد الرفع اضبط «جدول ربط بنود الأعمال بالمواد» '
+        'في تبويب مراجعة البونص، فهو أساس المقارنة.</div></div>', unsafe_allow_html=True)
+    if where:
+        st.caption(where)
 
 
 def _title(t):
@@ -506,7 +542,7 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
     _title("مراجعة البونص: المنفذ مقابل المصروف")
     B = bon[bon["الموقع"] == site].copy()
     if not len(B):
-        st.info("ارفع تقارير البونص الشهرية من تبويب «البيانات والإعدادات».")
+        _onboard("مراجعة البونص تحتاج: تقارير البونص الشهرية + حركة الأصناف + جدول الربط.")
         return
     M = mov[(mov["الموقع"] == site)] if len(mov) else pd.DataFrame()
     if not len(M):
@@ -563,7 +599,7 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
         srows.append(("total", "الإجمالي", [str(int(g.عدد.sum())), _fmt(g.صافي_الفرق.sum())]))
         st.table(build(srows, ["الحالة", "عدد السطور", "صافي الفرق"]))
         X = V[list(V.columns[::-1])].head(3000)
-        with st.container(key="sv_grid_bon"):
+        with _box("sv_grid_bon"):
             st.dataframe(X, hide_index=True, use_container_width=True, height=430)
         st.download_button("⬇️ تنزيل المقارنة (CSV)", T.to_csv(index=False).encode("utf-8-sig"),
                            f"bonus_review_{site}.csv", "text/csv", key="sv_dl_bon")
@@ -573,7 +609,7 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
         nn = notes[(notes["الموقع"] == site)] if len(notes) else pd.DataFrame()
         if len(nn):
             nn = nn[nn["الشهر"].isin(msel)]
-            with st.container(key="sv_grid_notes"):
+            with _box("sv_grid_notes"):
                 st.dataframe(nn[list(nn.columns[::-1])], hide_index=True, use_container_width=True, height=330)
         else:
             st.caption("لا توجد ملاحظات محمّلة.")
@@ -583,7 +619,7 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
         if len(P):
             val = P.groupby("رمز البند")["القيمة"].sum()
             G["القيمة بأسعار العقد"] = G["رمز البند"].map(val)
-        with st.container(key="sv_grid_bq"):
+        with _box("sv_grid_bq"):
             st.dataframe(G[list(G.columns[::-1])], hide_index=True, use_container_width=True, height=330)
 
 
@@ -631,7 +667,7 @@ def _wo_cost(bon, mov, sett, wo, pay, ipr, cpr, mp, cfg, site, build):
     _title("تكلفة أوامر العمل")
     B = bonus_value(bon, cpr, cfg, site)
     if not len(B):
-        st.info("ارفع تقارير البونص وأسعار بنود العقد.")
+        _onboard("تكلفة أوامر العمل تحتاج: تقارير البونص + حركة الأصناف + الرواتب + أسعار الأصناف.")
         return
     yr = int(cfg.get("year", 2026))
     unpriced = B[B["سعر الوحدة"].isna()]
@@ -699,7 +735,7 @@ def _wo_cost(bon, mov, sett, wo, pay, ipr, cpr, mp, cfg, site, build):
             "المواد التشغيلية", "نصيب الرواتب", "إجمالي التكلفة", "الهامش", "نسبة التكلفة", "مبلغ شهادة الإنجاز",
             "أصناف الأمر", "مقايسة المواد", "صرف المواد", "متبقي الصرف"]
     X = W[[c for c in cols if c in W.columns]].sort_values("القيمة المنفذة", ascending=False)
-    with st.container(key="sv_grid_woc"):
+    with _box("sv_grid_woc"):
         st.dataframe(X[list(X.columns[::-1])].head(3000), hide_index=True, use_container_width=True, height=430)
     st.download_button("⬇️ تنزيل تكلفة أوامر العمل (CSV)", X.to_csv(index=False).encode("utf-8-sig"),
                        f"wo_cost_{site}.csv", "text/csv", key="sv_dl_woc")
@@ -728,6 +764,9 @@ def _productivity(prd, bon, mov, pay, ipr, cpr, mp, cfg, site, build):
         om = M.groupby("الشهر")["التكلفة"].sum()
     else:
         om = pd.Series(dtype=float)
+    if not len(P) and not len(B):
+        _onboard("إنتاجية الموقع تحتاج: تقرير إنتاجية الموقع + تقارير البونص + الرواتب.")
+        return
     m1, m2 = int(cfg.get("m_from", 1)), int(cfg.get("m_to", 12))
     c_team = next((c for c in P.columns if "تنفيذ فرق الشركة" in c and "اسناد" in c), None) if len(P) else None
     c_sub = next((c for c in P.columns if "الباطن" in c), None) if len(P) else None
@@ -769,7 +808,7 @@ def _productivity(prd, bon, mov, pay, ipr, cpr, mp, cfg, site, build):
     _note("تكلفة مقاولي الباطن غير محمّلة هنا، فهامش فرق الشركة لا يشملها.")
     if len(P):
         with st.expander("تقرير الموقع كما ورد"):
-            with st.container(key="sv_grid_prd"):
+            with _box("sv_grid_prd"):
                 st.dataframe(P[list(P.columns[::-1])], hide_index=True, use_container_width=True, height=330)
 
 
@@ -777,7 +816,7 @@ def _materials(sett, mov, site, build):
     _title("انحرافات المواد")
     S = sett[sett["الموقع"] == site] if len(sett) else pd.DataFrame()
     if not len(S):
-        st.info("ارفع تقرير تصفية أوامر العمل ليظهر انحراف المواد لكل أمر عمل.")
+        _onboard("انحرافات المواد تحتاج: تقرير تصفية أوامر العمل للموقع.")
         return
     c1, c2 = st.columns(2)
     kind = c1.radio("التصنيف", ["الكل", "مواد العهدة", "المواد التشغيلية"], horizontal=True, key="sv_mk")
@@ -805,7 +844,7 @@ def _materials(sett, mov, site, build):
     else:
         V = X[X["فرق المقايسة"] != 0][["أمر العمل", "الصنف", "الوحدة", "التصنيف", "المقايسة", "المندوب", "الصرف",
                                        "الارجاع", "صافي الصرف", "فرق المقايسة", "متبقي صرف", "الحالة"]].sort_values("فرق المقايسة")
-    with st.container(key="sv_grid_mat"):
+    with _box("sv_grid_mat"):
         st.dataframe(V[list(V.columns[::-1])].head(3000), hide_index=True, use_container_width=True, height=430)
     st.download_button("⬇️ تنزيل انحرافات المواد (CSV)", V.to_csv(index=False).encode("utf-8-sig"),
                        f"materials_dev_{site}.csv", "text/csv", key="sv_dl_mat")
@@ -814,7 +853,7 @@ def _materials(sett, mov, site, build):
 def _wo_base(wo, mov, bon, site, build):
     _title("قاعدة أوامر العمل (حالة الكهرباء)")
     if not len(wo):
-        st.info("ارفع ملفات موقف أوامر العمل من الكهرباء (ملف لكل منطقة).")
+        _onboard("قاعدة أوامر العمل تحتاج: ملفات موقف أوامر العمل من الكهرباء (ملف لكل منطقة).")
         return
     scope = st.radio("النطاق", ["الموقع المختار", "كل المواقع"], horizontal=True, key="sv_wsc")
     W = wo if scope == "كل المواقع" else wo[wo["الموقع"] == site]
@@ -825,7 +864,7 @@ def _wo_base(wo, mov, bon, site, build):
     rows = [("item", k, [str(int(v))]) for k, v in s.items()]
     rows.append(("total", "الإجمالي", [str(int(s.sum()))]))
     st.table(build(rows, ["موقف أمر العمل", "عدد الأوامر"]))
-    with st.container(key="sv_grid_wos"):
+    with _box("sv_grid_wos"):
         st.dataframe(G[list(G.columns[::-1])], hide_index=True, use_container_width=True, height=330)
     # أوامر في المستودع ولا توجد لدى الكهرباء
     if len(mov):
@@ -837,10 +876,10 @@ def _wo_base(wo, mov, bon, site, build):
         c1.caption(f"أوامر طوارئ في المستودع خارج تقرير الكهرباء: {len(em):,} (التقرير لا يشمل الطوارئ)")
         c2.caption(f"أوامر مشاريع في المستودع ولا توجد في تقرير الكهرباء: {len(pr):,}")
         if pr:
-            with st.container(key="sv_grid_miss"):
+            with _box("sv_grid_miss"):
                 st.dataframe(pd.DataFrame({"أمر العمل": pr}), hide_index=True, use_container_width=True, height=220)
     with st.expander("تفاصيل أوامر العمل"):
-        with st.container(key="sv_grid_wod"):
+        with _box("sv_grid_wod"):
             st.dataframe(W[list(W.columns[::-1])].head(3000), hide_index=True, use_container_width=True, height=400)
 
 
@@ -1021,7 +1060,7 @@ def render_sites(ctx, build_styled_table):
             site = st.selectbox("📍 الموقع", have, index=have.index(cfg["site"]) if cfg.get("site") in have else 0, key="sv_site")
         else:
             site = cfg.get("site", "الرياض")
-            st.info("لا توجد بيانات محمّلة بعد. ابدأ من تبويب «البيانات والإعدادات».")
+            st.warning("لا توجد بيانات محمّلة لأي موقع بعد، لذلك تظهر الأقسام فارغة. التفاصيل في كل قسم وفي تبويب «⚙️ البيانات والإعدادات».")
     with t_bon:
         _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build_styled_table)
     with t_cost:
