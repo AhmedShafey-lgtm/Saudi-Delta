@@ -646,6 +646,7 @@ BK_FILES = {  # اسم داخل الأرشيف ← (مسار الملف على �
     # التدفقات النقدية: التعديلات اليدوية على تصنيف السطور
     "cashflow/overrides.csv": (os.path.join(HERE, "cashflow_overrides.csv"), "cf_ovr", True),
     "cashflow/contractors.csv": (os.path.join(HERE, "cashflow_subs.csv"), "cf_subs", True),
+    "cashflow/exp_overrides.csv": (os.path.join(HERE, "cashflow_exp_overrides.csv"), "cf_exovr", True),
     # تقارير المواقع
     "sites/map.csv": (os.path.join(HERE, "st_map.csv"), "sv_map", True),
     "sites/settings.json": (os.path.join(HERE, "st_settings.json"), "sv_cfg", True),
@@ -720,7 +721,7 @@ def restore_backup(raw):
     ss.pop("_hr_fhc", None)
     ss.pop("hr_hashes", None)
     ss.pop("sv_cfg", None)
-    for k in ("cf_ovr", "cf_ovr_ver", "cf_subs"):
+    for k in ("cf_ovr", "cf_ovr_ver", "cf_subs", "cf_exovr"):
         ss.pop(k, None)
     return done
 

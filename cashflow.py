@@ -727,6 +727,46 @@ def _exp_item(code, rules):
     return "مصاريف تشغيلية وإدارية أخرى"
 
 
+def _load_exovr():
+    try:
+        if os.path.exists(EXOVR_FILE):
+            return pd.read_csv(EXOVR_FILE, dtype=str, encoding="utf-8-sig").fillna("")[EXOVR_COLS]
+    except Exception:
+        pass
+    return pd.DataFrame(columns=EXOVR_COLS)
+
+
+def _save_exovr(d):
+    try:
+        d.drop_duplicates(EXOVR_COLS[:3], keep="last").to_csv(EXOVR_FILE, index=False, encoding="utf-8-sig")
+        return True
+    except Exception as e:
+        st.session_state["_cf_exovr_err"] = str(e)
+        return False
+
+
+def _apply_exovr(X):
+    """نقل يدوي لمصاريف مقيدة على مركز تكلفة إلى عقد آخر. المفتاح: مركز التكلفة وكود الحساب والشهر (أو * لكل الأشهر)."""
+    ov = st.session_state.get("cf_exovr")
+    if ov is None:
+        ov = _load_exovr()
+        st.session_state["cf_exovr"] = ov
+    if not len(ov):
+        return X
+    X = X.copy()
+    cc = X["مركز التكلفة"].astype(str)
+    ac = X["كود الحساب"].astype(str)
+    mo = X["الشهر"].astype(str)
+    for _, r in ov.iterrows():
+        sel = (cc == str(r["مركز التكلفة"])) & (ac == str(r["كود الحساب"]))
+        if str(r["الشهر"]) != "*":
+            sel = sel & (mo == str(r["الشهر"]))
+        if sel.any():
+            X.loc[sel, "العقد"] = r["العقد"]
+            X.loc[sel, "موزع"] = True
+    return X
+
+
 def expenses_classified():
     """مصاريف قائمة الدخل بعد ربطها بالبند والعقد."""
     ss = st.session_state
@@ -755,6 +795,7 @@ def expenses_classified():
     X["موزع"] = False
     if st.session_state.get("cf_alloc_res", True):
         X = _alloc_residency(X)
+    X = _apply_exovr(X)
     if st.session_state.get("cf_alloc_sub", True):
         X = _alloc_subs(X)
     return X
@@ -827,6 +868,8 @@ def site_expenses(C_all, X, months_all, sites, excl_dep=True):
 
 ASSET_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_assets.csv")
 SUBS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_subs.csv")
+EXOVR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashflow_exp_overrides.csv")
+EXOVR_COLS = ["مركز التكلفة", "كود الحساب", "الشهر", "العقد"]
 ASSET_COLS = ["الشهر", "تاريخ الشراء", "الموقع", "بيان الأصل", "التكلفة"]
 
 
@@ -1312,6 +1355,67 @@ def _edit_lines(D, key, unlocked, limit=150):
         st.rerun()
 
 
+def _exp_move_ui(X_all, unlocked):
+    """نقل مصاريف مقيدة على مركز تكلفة (غالباً الإدارة) إلى عقد، على مستوى البند ومركز التكلفة."""
+    with st.expander("🔁 نقل مصاريف من مركز تكلفة إلى عقد (قائمة الدخل)"):
+        st.caption("هذا الجدول مستقل عن محرّر سطور التدفقات النقدية: المصروف هنا يُنسب من مركز التكلفة في قيد المصروف. "
+                   "انقل البنود التي تخص عقداً بعينه رغم قيدها على الإدارة.")
+        ov = st.session_state.get("cf_exovr", _load_exovr())
+        st.caption(f"عمليات النقل المحفوظة حالياً: {len(ov):,}")
+        _e = st.session_state.pop("_cf_exovr_err", "")
+        if _e:
+            st.warning(f"تعذّر الحفظ على القرص: {_e}. النقل مطبَّق في الجلسة.")
+        if not unlocked:
+            st.caption("🔒 للتعديل أدخل كلمة السر في الشريط الجانبي.")
+            return
+        src = st.selectbox("مركز التكلفة المصدر", ["الإدارة"] + [c for c in CONTRACT_OPTS if c != "الإدارة"] + [NO_CONTRACT], key="cf_xm_src")
+        D = X_all[X_all["العقد"] == src]
+        if not len(D):
+            st.caption("لا توجد مصاريف على هذا المركز.")
+            return
+        G = D.groupby(["البند", "مركز التكلفة", "كود الحساب"], as_index=False)["المبلغ"].sum().sort_values("المبلغ", ascending=False)
+        G["المبلغ"] = G["المبلغ"].round(0)
+        G.insert(0, "نقل", False)
+        ed = st.data_editor(G, hide_index=True, use_container_width=True, height=330, key="cf_xm_ed",
+                            column_config={"نقل": st.column_config.CheckboxColumn(width=60),
+                                           "المبلغ": st.column_config.NumberColumn(format="%.0f", disabled=True),
+                                           "البند": st.column_config.TextColumn(disabled=True),
+                                           "مركز التكلفة": st.column_config.TextColumn(disabled=True),
+                                           "كود الحساب": st.column_config.TextColumn(disabled=True)})
+        picked = ed[ed["نقل"] == True]
+        c1, c2 = st.columns([2, 2])
+        dst = c1.selectbox("العقد المنقول إليه", [c for c in CONTRACT_OPTS if c != src], key="cf_xm_dst")
+        allm = c2.checkbox("لكل الأشهر", value=True, key="cf_xm_all")
+        if len(picked):
+            st.caption(f"المحدد: {len(picked)} بنداً، الإجمالي {picked['المبلغ'].sum():,.0f}")
+        if st.button(f"نقل المحدد ({len(picked)}) إلى {dst}", key="cf_xm_do", disabled=not len(picked)):
+            rows = []
+            for _, r in picked.iterrows():
+                if allm:
+                    rows.append([str(r["مركز التكلفة"]), str(r["كود الحساب"]), "*", dst])
+                else:
+                    for m in sorted(set(D[(D["كود الحساب"].astype(str) == str(r["كود الحساب"])) &
+                                          (D["مركز التكلفة"].astype(str) == str(r["مركز التكلفة"]))]["الشهر"].astype(str))):
+                        rows.append([str(r["مركز التكلفة"]), str(r["كود الحساب"]), m, dst])
+            new = pd.DataFrame(rows, columns=EXOVR_COLS)
+            cur = st.session_state.get("cf_exovr", _load_exovr())
+            out = pd.concat([cur, new], ignore_index=True).drop_duplicates(EXOVR_COLS[:3], keep="last")
+            st.session_state["cf_exovr"] = out
+            ok = _save_exovr(out)
+            st.success(f"تم نقل {len(new)} قاعدة إلى {dst}" + ("" if ok else " (في الجلسة فقط)"))
+            st.rerun()
+        if len(ov):
+            st.markdown("**عمليات النقل المحفوظة**")
+            o2 = ov.copy()
+            o2.insert(0, "حذف", False)
+            ed2 = st.data_editor(o2, hide_index=True, use_container_width=True, height=200, key="cf_xm_ov")
+            if st.button("حذف المحدد من عمليات النقل", key="cf_xm_del"):
+                keep = ed2[ed2["حذف"] != True][EXOVR_COLS].reset_index(drop=True)
+                st.session_state["cf_exovr"] = keep
+                _save_exovr(keep)
+                st.rerun()
+
+
 def _status_block(unlocked):
     """حالة البيانات المحمّلة والنسخ الاحتياطية (تُعرض أسفل الصفحة)."""
     st.markdown('<div class="cf-title">حالة البيانات المحمّلة والنسخ الاحتياطية</div>', unsafe_allow_html=True)
@@ -1605,6 +1709,7 @@ def render_cashflow(ctx, build_styled_table):
     else:
         st.caption("المصروف يُنسب للعقد من مركز تكلفته في قيد المصروف نفسه وليس من جهة الدفع. المخصصات (إجازات، نهاية خدمة، مكافآت وتذاكر) تُحتسب لكل عقد بالأكبر من المصروف المحمَّل والمدفوع نقداً بلا تكرار.")
         excl = st.checkbox("استبعاد الاستهلاك (غير نقدي)", value=True, key="cf_excl_dep")
+        _exp_move_ui(X_all, unlocked)
         sites_all = CONTRACT_OPTS + [NO_CONTRACT]
         AS = assets_classified()
         if not len(AS):
