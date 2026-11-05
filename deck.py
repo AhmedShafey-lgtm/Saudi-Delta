@@ -141,11 +141,14 @@ def _fig(fig, h=340, legend=True):
 
 def _tbl(df):
     """جدول عرض نظيف بلا فهرس، بخط أكبر ومحاذاة مناسبة."""
+    df = df.reset_index(drop=True)
     sty = df.style.set_properties(**{"font-size": "1.02rem", "color": "#111827"})
-    try:
-        sty = sty.hide(axis="index")
-    except Exception:
-        pass
+    for fn in ("hide_index", "hide"):
+        try:
+            sty = sty.hide(axis="index") if fn == "hide" else sty.hide_index()
+            break
+        except Exception:
+            continue
     st.table(sty)
 
 
@@ -222,6 +225,29 @@ def facts(ctx, cv):
     F["hc_a"] = sum(float(v.get("hc_admin", 0)) for v in P.values())
     F["comp"] = sum(float(v.get("total_comp", 0)) for v in P.values())
     F["adm_pay"] = sum(float(v.get("admin_cost", 0)) for v in P.values())
+    # الكادر الإداري لكل موقع (مركز تكلفة)
+    ACT_AR = {"construction": "إنشاءات وتعزيزات", "maintenance": "صيانة", "readers": "قراء عدادات", "admin": "الإدارة"}
+    rows = []
+    for site, d in cv._db.items():
+        if site == cv.ADMIN_SITE:          # الإدارة ومصنع الأعمدة مركز مركزي بلا إيراد تشغيلي
+            continue
+        p = P.get(site, {})
+        rv = cv.site_revs(site)[5]
+        hc_t = float(p.get("hc_total", 0)); hc_a = float(p.get("hc_admin", 0)); hc_p = float(p.get("hc_prod", 0))
+        adm = float(p.get("admin_cost", 0)); comp = float(p.get("total_comp", 0))
+        if hc_t <= 0 and adm <= 0:
+            continue
+        rows.append({"الموقع": site, "العقد": d.get("contract", ""), "النشاط": ACT_AR.get(cv.activity_of(site), ""),
+                     "الإيراد": rv, "العمالة": hc_t, "إداري": hc_a, "منتج": hc_p,
+                     "تكلفة الإدارة": adm, "تكلفة العمالة": comp,
+                     "إداري %": _div(hc_a, hc_t, 100), "إدارة/إيراد": _div(adm, rv, 100),
+                     "إدارة/عمالة": _div(adm, comp, 100),
+                     "منتج لكل إداري": _div(hc_p, hc_a),
+                     "كلفة الإداري": _div(adm, hc_a)})
+    F["ADM"] = pd.DataFrame(rows)
+    ap = P.get(cv.ADMIN_SITE, {})
+    F["HO"] = {"hc": float(ap.get("hc_admin", 0)), "cost": float(ap.get("admin_cost", 0)),
+               "comp": float(ap.get("total_comp", 0))}
     # الأصول
     AS = cv._ast
     F["ast_cost"] = sum(float(v.get("total_cost", 0)) for v in AS.values())
@@ -585,6 +611,83 @@ def s_summary(F, build):
          f"تاريخ الإصدار {dt.date.today():%Y-%m-%d}")
 
 
+def s_admin(F):
+    head("الكادر الإداري في المواقع", "عدد الإداريين وتكلفتهم في كل مركز تكلفة · 2026 تسعة أشهر")
+    import plotly.graph_objects as go
+    A = F["ADM"]
+    if not len(A):
+        point("لا توجد بيانات عمالة للمواقع.", "warn")
+        return
+    tot_a, tot_c, tot_rv = A["إداري"].sum(), A["تكلفة الإدارة"].sum(), A["الإيراد"].sum()
+    tot_hc, tot_comp, tot_p = A["العمالة"].sum(), A["تكلفة العمالة"].sum(), A["منتج"].sum()
+    kpis([("الكادر الإداري", f"{tot_a:,.0f}", f"{_p(_div(tot_a, tot_hc, 100))} من إجمالي العمالة", ""),
+          ("تكلفته", _m(tot_c) + " م", f"{_p(_div(tot_c, tot_comp, 100))} من تكلفة العمالة", "gold"),
+          ("من الإيراد", _p(_div(tot_c, tot_rv, 100)), "نسبة تكلفة الإدارة إلى إيراد المواقع", "down" if _div(tot_c, tot_rv, 100) > 10 else "up"),
+          ("منتج لكل إداري", f"{_div(tot_p, tot_a):,.1f}", f"متوسط كلفة الإداري {_n(_div(tot_c, tot_a))} ريال", "")])
+    V = A[A["الإيراد"] > 0].sort_values("إدارة/إيراد", ascending=True)
+    ACOL = {"إنشاءات وتعزيزات": NAVY, "صيانة": TEAL, "قراء عدادات": GOLD}
+    c1, c2 = st.columns([1.15, 1])
+    with c1:
+        avg = _div(tot_c, tot_rv, 100)
+        fig = go.Figure()
+        for act, col in ACOL.items():
+            W = V[V["النشاط"] == act]
+            if not len(W):
+                continue
+            fig.add_bar(y=W["الموقع"], x=[round(v, 1) for v in W["إدارة/إيراد"]], orientation="h", name=act,
+                        marker_color=col, text=[f"{v:.1f}%" for v in W["إدارة/إيراد"]], textposition="auto")
+        fig.add_vline(x=round(avg, 1), line_dash="dash", line_color=RED,
+                      annotation_text=f"متوسط المواقع {avg:.1f}%", annotation_position="top")
+        fig.update_layout(title="تكلفة الكادر الإداري من إيراد الموقع (%)", barmode="relative")
+        st.plotly_chart(_fig(fig, max(380, 26 * len(V))), use_container_width=True)
+    with c2:
+        W = V.sort_values("منتج لكل إداري", ascending=False)
+        fig2 = go.Figure(go.Bar(y=W["الموقع"], x=[round(v, 1) for v in W["منتج لكل إداري"]], orientation="h",
+                                marker_color=NAVY, text=[f"{v:,.1f}" for v in W["منتج لكل إداري"]], textposition="auto"))
+        fig2.update_layout(title="عدد العمال المنتجين لكل موظف إداري")
+        st.plotly_chart(_fig(fig2, max(360, 26 * len(W)), legend=False), use_container_width=True)
+    _ord = {"إنشاءات وتعزيزات": 0, "صيانة": 1, "قراء عدادات": 2}
+    D = A.assign(_o=A["النشاط"].map(_ord).fillna(9)).sort_values(["_o", "تكلفة الإدارة"], ascending=[True, False])
+    T = pd.DataFrame({
+        "الموقع": D["الموقع"],
+        "النشاط": D["النشاط"],
+        "العقد": D["العقد"].str.replace("العقد الموحد ", "", regex=False),
+        "العمالة": D["العمالة"].map(lambda v: f"{v:,.0f}"),
+        "إداري": D["إداري"].map(lambda v: f"{v:,.0f}"),
+        "نسبته من العمالة": D["إداري %"].map(_p),
+        "تكلفة الإدارة (م)": D["تكلفة الإدارة"].map(_m),
+        "من تكلفة العمالة": D["إدارة/عمالة"].map(_p),
+        "من إيراد الموقع": D["إدارة/إيراد"].map(lambda v: _p(v) if np.isfinite(v) else "—"),
+        "منتج لكل إداري": D["منتج لكل إداري"].map(lambda v: f"{v:,.1f}" if np.isfinite(v) else "—"),
+        "كلفة الإداري": D["كلفة الإداري"].map(lambda v: _n(v) if np.isfinite(v) else "—"),
+    })
+    _tbl(T)
+    for act in ("إنشاءات وتعزيزات", "صيانة"):
+        W = V[V["النشاط"] == act]
+        if len(W) < 2:
+            continue
+        a_avg = _div(W["تكلفة الإدارة"].sum(), W["الإيراد"].sum(), 100)
+        hi, lo = W.iloc[-1], W.iloc[0]
+        gap = float(sum(max(0.0, r["تكلفة الإدارة"] - r["الإيراد"] * a_avg / 100.0) for _, r in W.iterrows()))
+        point(f"<b>{act}:</b> متوسط العبء الإداري {_p(a_avg)} من الإيراد. أعلاه <b>{hi['الموقع']}</b> "
+              f"({_p(hi['إدارة/إيراد'])} بـ{hi['إداري']:,.0f} إداريين) وأدناه <b>{lo['الموقع']}</b> ({_p(lo['إدارة/إيراد'])}). "
+              f"لو بلغت المواقع فوق المتوسط متوسطَ نشاطها لانخفضت التكلفة {_n(gap)} ريال في تسعة أشهر.",
+              "warn" if hi["إدارة/إيراد"] > 2 * a_avg else "")
+    con = V[V["النشاط"] == "إنشاءات وتعزيزات"]
+    mnt = V[V["النشاط"] == "صيانة"]
+    if len(con) and len(mnt):
+        point(f"الفارق بين النشاطين بنيوي لا إداري: مواقع الإنشاءات تحمل "
+              f"{_p(_div(con['تكلفة الإدارة'].sum(), con['الإيراد'].sum(), 100))} مقابل "
+              f"{_p(_div(mnt['تكلفة الإدارة'].sum(), mnt['الإيراد'].sum(), 100))} في الصيانة، لأن أعمال الإنشاءات "
+              f"تحتاج تنسيقاً ومتابعة إسناد وفوترة لكل أمر عمل. المقارنة العادلة داخل النشاط الواحد.", "")
+    ho = F.get("HO", {})
+    if ho.get("cost"):
+        point(f"خارج هذا الجدول: الإدارة العامة ومصنع الأعمدة بهما {ho['hc']:,.0f} موظفاً إدارياً بتكلفة "
+              f"{_m(ho['cost'])} مليون ريال، وهي مركز مركزي بلا إيراد تشغيلي فلا تدخل المقارنة بين المواقع.", "")
+    foot("الكادر الإداري وتكلفته من ملف الرواتب موزعاً على مراكز التكلفة، والإيراد هو التنفيذ المعتمد لكل مركز في 2026. "
+         "مراكز قراء العدادات انتهى مشروعها خلال الفترة.")
+
+
 SLIDES = [
     ("١. الغلاف والصورة العامة", "cover"),
     ("٢. الأداء المالي", "fin"),
@@ -593,9 +696,10 @@ SLIDES = [
     ("٥. الإسناد والتنفيذ والفوترة", "bl"),
     ("٦. السيولة ورأس المال العامل", "liq"),
     ("٧. العمالة والإنتاجية", "ppl"),
-    ("٨. الأصول والمعدات", "ast"),
-    ("٩. ما يستحق قرار الإدارة", "watch"),
-    ("١٠. الخلاصة", "sum"),
+    ("٨. الكادر الإداري في المواقع", "adm"),
+    ("٩. الأصول والمعدات", "ast"),
+    ("١٠. ما يستحق قرار الإدارة", "watch"),
+    ("١١. الخلاصة", "sum"),
 ]
 
 
@@ -618,7 +722,7 @@ def render_deck(ctx, build_styled_table, cv):
             st.caption("كل الشرائح متتابعة في صفحة واحدة، مناسبة للطباعة أو التصدير إلى PDF من المتصفح.")
     draw = {"cover": lambda: s_cover(F, ctx), "fin": lambda: s_financial(F, build_styled_table),
             "con": lambda: s_contracts(F, build_styled_table), "cost": lambda: s_cost(F),
-            "bl": lambda: s_backlog(F), "liq": lambda: s_liquidity(F), "ppl": lambda: s_people(F),
+            "bl": lambda: s_backlog(F), "liq": lambda: s_liquidity(F), "ppl": lambda: s_people(F), "adm": lambda: s_admin(F),
             "ast": lambda: s_assets(F), "watch": lambda: s_watch(F), "sum": lambda: s_summary(F, build_styled_table)}
     picked = [s for s in SLIDES if (pick is None or s[0] == pick)]
     for title, key in picked:
