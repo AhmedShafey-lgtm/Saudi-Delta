@@ -600,6 +600,10 @@ def render_hr(ctx, build_styled_table):
                                sorted(A_full["المهنة"].dropna().unique().tolist()),
                                key="hr_g_prof", placeholder="كل المهن")
         rsel = fc2.radio("👔 الدور الوظيفي", ["الكل"] + ROLES, horizontal=True, key="hr_g_role")
+        if (psel or rsel != "الكل") and st.button("↩️ إلغاء الفلاتر وعرض كل العاملين", key="hr_g_reset"):
+            st.session_state["hr_g_prof"] = []
+            st.session_state["hr_g_role"] = "الكل"
+            st.rerun()
         if not len(pay):
             st.warning("لا توجد تفاصيل رواتب محمّلة حالياً، لذا تظهر الرواتب والتأمينات والإقامات صفراً. أعد رفع ملف تفاصيل الرواتب الشهرية من «البيانات والإعدادات» "
                        "(الملفات المحفوظة قد تضيع عند إعادة تشغيل الاستضافة).")
@@ -608,9 +612,21 @@ def render_hr(ctx, build_styled_table):
     if rsel != "الكل":
         V = V[V["الدور الوظيفي"] == rsel].copy()
     A = V[V["نشط"]].copy()
+    # تنبيه ظاهر عند تفعيل أي فلتر، فالفلاتر لزجة وقد تُخفي معظم العمالة دون أن ينتبه القارئ
+    if len(A) != len(A_full):
+        parts = []
+        if psel:
+            parts.append("المهنة: " + "، ".join(psel[:4]) + ("…" if len(psel) > 4 else ""))
+        if rsel != "الكل":
+            parts.append("الدور الوظيفي: " + rsel)
+        with fbar:
+            st.markdown('<div class="hr-note"><b>⚠️ فلتر نشط:</b> ' + " · ".join(parts) +
+                        f' — المعروض <b>{len(A):,}</b> من أصل <b>{len(A_full):,}</b> موظفاً على رأس العمل. '
+                        'كل الأرقام في هذا التبويب تخص المعروض فقط. اضغط «إلغاء الفلاتر» أعلاه لعرض الجميع.</div>',
+                        unsafe_allow_html=True)
     ym = good_month(pay)
     with t_sum:
-        _summary(A, pay, sett, ym, build_styled_table)
+        _summary(A, pay, sett, ym, build_styled_table, A_full)
     with t_emp:
         _browse(V)
     with t_inc:
@@ -841,7 +857,7 @@ def _backup_ui(unlocked):
         st.success(st.session_state.pop("hr_bk_msg"))
 
 
-def _summary(A, pay, sett, ym, build):
+def _summary(A, pay, sett, ym, build, A_full=None):
     n_all = len(A)
     sa = int((A["الجنسية"] == "سعودي").sum())
     fo = int((A["الجنسية"] == "أجنبي").sum())
@@ -868,9 +884,12 @@ def _summary(A, pay, sett, ym, build):
     st.caption(f"الجنسية تُستنتج من رقم الهوية/الإقامة (يبدأ بـ1 سعودي و2 أجنبي)، وعند غيابه من وجود رسم إقامة في الرواتب؛ غير المحدد: {un}. "
                f"للمطابقة: شهادة التأمينات {sett['gosi_date']}: سعوديون {sett['gosi_saudi']:,} وأجانب {sett['gosi_foreign']:,} "
                f"(مقابل {sa:,} و{fo:,} في ملف الموظفين).")
-    if "الدور الوظيفي" in A.columns:
+    R0 = A_full if (A_full is not None and len(A_full)) else A
+    if "الدور الوظيفي" in R0.columns:
         _title("الطاقم الإداري والإنتاجي")
-        R = A.copy()
+        if len(R0) != len(A):
+            st.caption("هذا القسم يعرض قسمة العمالة كاملة بغض النظر عن الفلاتر أعلاه، لأن معناه مقارنة الطاقمين ببعضهما.")
+        R = R0.copy()
         R["راتب"] = R["إجمالي الراتب"].fillna(0)
         n_adm = int((R["الدور الوظيفي"] == ADMIN_ROLE).sum())
         c_adm = float(R.loc[R["الدور الوظيفي"] == ADMIN_ROLE, "راتب"].sum())
@@ -1012,9 +1031,10 @@ def _impact(D, d, sett, today):
     ann = np.where(yrs >= 5, sett["leave_days_ge5"], sett["leave_days_lt5"])
     end = D["نهاية العقد"].fillna(today)
     T_ = ((end - D["تاريخ التعيين"]).dt.days / 365.25).clip(lower=0).fillna(0)
-    yrs12 = np.minimum(yrs + 1.0, T_.where(T_ > 0, yrs + 1.0))
+    # استحقاق سنة كاملة قادمة: شهر عن كل سنة بعد الخمس الأولى، ونصف شهر لمن خدمته دونها.
+    # لا يُقصَّر بتاريخ نهاية العقد الحالي لأن العقود تُجدَّد والاستحقاق يستمر.
     f_now = yrs.map(eosb_factor)
-    f_12 = pd.Series(yrs12, index=D.index).map(eosb_factor)
+    f_12 = (yrs + 1.0).map(eosb_factor)
     f_end = T_.map(eosb_factor)
     # أيام الإجازة المتراكمة حتى اليوم من تاريخ آخر إجازة
     mo = ((today - D["اخر اجازة"]).dt.days / 30.44).clip(lower=0).fillna(0)
@@ -1025,7 +1045,7 @@ def _impact(D, d, sett, today):
     out["الإجازة: الرصيد السابق"] = d / 30 * days_now
     out["الإجازة: 12 شهراً"] = d / 30 * ann
     out["نهاية الخدمة: الرصيد السابق"] = d * f_now
-    out["نهاية الخدمة: 12 شهراً"] = d * (f_12 - f_now).clip(lower=0)
+    out["نهاية الخدمة: 12 شهراً"] = d * (f_12 - f_now).clip(lower=0)   # = الزيادة × 1 شهر لمن تجاوز 5 سنوات
     out["نهاية الخدمة: ما بعد 12 شهراً حتى نهاية العقد"] = d * (f_end - f_12).clip(lower=0)
     out["أثر الرصيد السابق (لمرة واحدة)"] = out["الإجازة: الرصيد السابق"] + out["نهاية الخدمة: الرصيد السابق"]
     out["أثر 12 شهراً القادمة"] = out["الرواتب: 12 شهراً"] + out["الإجازة: 12 شهراً"] + out["نهاية الخدمة: 12 شهراً"]
@@ -1103,7 +1123,10 @@ def _increases(A, unlocked, ym, build):
     Gt = Gt[list(Gt.columns[1:][::-1]) + [Gt.columns[0]]]
     st.markdown("**الأثر على مستوى العقد / الشركة**")
     st.caption("لكل بند رقمان: أثر على الرصيد السابق يحدث مرة واحدة لأن المخصص يُحسب على آخر راتب فيرتفع المتراكم من سنوات الخدمة السابقة، "
-               "وأثر 12 شهراً القادمة وهو ما يُضاف خلال السنة القادمة. الرواتب نقدية، والإجازة ونهاية الخدمة مخصصات غير نقدية حتى تُصرف.")
+               "وأثر 12 شهراً القادمة وهو ما يُضاف خلال السنة. "
+               "استحقاق السنة القادمة لنهاية الخدمة = شهر كامل من الزيادة لمن تجاوزت خدمته خمس سنوات ونصف شهر لمن دونها، "
+               "ومثله مخصص الإجازة = 30 يوماً من الزيادة لمن تجاوز خمس سنوات و21 يوماً لمن دونها. "
+               "الرواتب نقدية، والإجازة ونهاية الخدمة مخصصات غير نقدية حتى تُصرف.")
     with _box("hr_grid_incg"):
         st.dataframe(Gt.style.format({c: "{:,.0f}" for c in Gt.columns if c != "العقد"}), hide_index=True, use_container_width=True, height=min(380, 38 + 35 * len(Gt)))
     # ---- تفصيل الموظفين
