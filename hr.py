@@ -44,8 +44,52 @@ CSS = """
   [class*="st-key-hr_grid"] [data-testid="stDataFrame"] { font-size: 1.02rem !important; }
   [class*="st-key-hr_grid"] [role="columnheader"] { font-weight: 700 !important; font-size: 1.0rem !important; }
   [class*="st-key-hr_grid"] [role="gridcell"] { font-size: 1.0rem !important; }
+  /* جدول عريض: رأس ثابت وعمود أول ثابت مع تمرير أفقي ورأسي */
+  .hw-wrap { direction: rtl; overflow: auto; max-height: 72vh; border: 1px solid #E2E8F0; border-radius: 8px; }
+  .hw { direction: rtl; border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%;
+        font-family: 'Segoe UI', Tahoma, sans-serif; }
+  .hw th, .hw td { text-align: center !important; vertical-align: middle !important; white-space: nowrap;
+                   padding: 9px 12px; border-bottom: 1px solid #EEF2F7; font-size: 1.1rem;
+                   font-variant-numeric: tabular-nums; }
+  .hw thead th { position: sticky; top: 0; z-index: 3; background: #1E3A8A; color: #fff; font-weight: 700;
+                 font-size: 1.0rem; white-space: pre-line; }
+  .hw tbody td.k, .hw thead th.k { position: sticky; right: 0; z-index: 2; text-align: center !important;
+                                   box-shadow: -1px 0 0 0 #CBD5E1 inset; }
+  .hw tbody td.k { background: #F8FAFC; font-size: 1.5rem; font-weight: 600; color: #0B2A6F; }
+  .hw thead th.k { z-index: 4; }
+  .hw tbody tr:nth-child(even) td { background: #FCFDFF; }
+  .hw tbody tr:nth-child(even) td.k { background: #F1F5F9; }
+  .hw tbody tr:hover td { background: #EFF6FF; }
+  .hw td.neg { color: #B91C1C; }
 </style>
 """
+
+
+def _wide(df, key_col, fmts=None, key_id="hw"):
+    """جدول HTML عريض برأس ثابت وعمود أساسي ثابت: الاسم بخط 150% وباقي الخلايا 110%، والكل في منتصف الخلية."""
+    import html as _html
+    cols = [key_col] + [c for c in df.columns if c != key_col]
+    fmts = fmts or {}
+    head = "".join(f'<th class="{"k" if c == key_col else ""}">{_html.escape(str(c))}</th>' for c in cols)
+    body = []
+    for _, r in df.iterrows():
+        tds = []
+        for c in cols:
+            v = r[c]
+            if c in fmts and pd.notna(v) and isinstance(v, (int, float, np.integer, np.floating)):
+                txt = fmts[c].format(v)
+            elif pd.isna(v):
+                txt = "—"
+            else:
+                txt = str(v)
+            cls = "k" if c == key_col else ("neg" if isinstance(v, (int, float, np.integer, np.floating))
+                                            and not isinstance(v, bool) and v < 0 else "")
+            if cls == "neg":
+                txt = f"({txt.lstrip('-')})"
+            tds.append(f'<td class="{cls}">{_html.escape(txt)}</td>')
+        body.append("<tr>" + "".join(tds) + "</tr>")
+    st.markdown(f'<div class="hw-wrap"><table class="hw"><thead><tr>{head}</tr></thead>'
+                f'<tbody>{"".join(body)}</tbody></table></div>', unsafe_allow_html=True)
 
 
 def _sub(text, tag="", tone="na"):
@@ -1015,9 +1059,7 @@ def _browse(V):
     for c in ["تاريخ التعيين", "نهاية العقد", "اخر اجازة"]:
         T[c] = T[c].dt.strftime("%Y-%m-%d")
     st.caption(f"{len(T):,} موظفاً")
-    T = T[list(T.columns[::-1])]
-    with _box("hr_grid_emp"):
-        st.dataframe(T.style.format({"الراتب الأساسي": "{:,.0f}", "إجمالي الراتب": "{:,.0f}"}), hide_index=True, use_container_width=True, height=480)
+    _wide(T, "الاسم", {"الراتب الأساسي": "{:,.0f}", "إجمالي الراتب": "{:,.0f}"})
     _role_editor(D, bool(st.session_state.get("hr_unlocked", False)))
     st.download_button("⬇️ تنزيل القائمة (CSV)", data=D.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"), file_name="hr_employees.csv", mime="text/csv", key="hr_dl")
 
@@ -1194,17 +1236,20 @@ def _increases(A, unlocked, ym, build):
     money = [c for c in money if c in T.columns]
     fm = {c: "{:,.0f}" for c in money}
     fm.update({"المدة من آخر إجازة (شهر)": "{:.1f}", "إجازة مستحقة منذ آخر إجازة (يوم)": "{:.1f}"})
-    Tr = T[list(T.columns[::-1])]
+    _wide(T, "الاسم", fm)
     editable = unlocked and scen == "المعتمدة"
     ed = None
-    with _box("hr_grid_inc"):
-        if editable:
-            st.caption("اكتب مبلغ الزيادة الشهرية أمام الموظف في عمود «الزيادة المعتمدة» ثم اضغط حفظ. (باقي الأعمدة للعرض ولا تتحدّث إلا بعد الحفظ.)")
-            cfg = {c: st.column_config.NumberColumn(c, format="%,.0f") for c in money}
-            ed = st.data_editor(Tr, hide_index=True, use_container_width=True, height=520, key=f"hr_inc_ed_{by}_{val}_{len(st.session_state['hr_inc'])}",
-                                disabled=[c for c in Tr.columns if c != "الزيادة المعتمدة"], column_config=cfg, num_rows="fixed")
-        else:
-            st.dataframe(Tr.style.format(fm, na_rep=""), hide_index=True, use_container_width=True, height=520)
+    if editable:
+        E = T[[c for c in ("الاسم", "المهنة", "الراتب الأساسي", "مبلغ آخر زيادة", "الزيادة المعتمدة") if c in T.columns]]
+        st.markdown('<div class="hr-sub">إدخال الزيادات: اكتب المبلغ الشهري أمام الموظف ثم اضغط حفظ. '
+                    'الجدول أعلاه للعرض ولا يتحدّث إلا بعد الحفظ.</div>', unsafe_allow_html=True)
+        with _box("hr_grid_inc"):
+            cfg = {c: st.column_config.NumberColumn(c, format="%,.0f") for c in E.columns if c in money}
+            ed = st.data_editor(E, hide_index=True, use_container_width=True,
+                                height=min(520, 48 + 35 * len(E)),
+                                key=f"hr_inc_ed_{by}_{val}_{len(st.session_state['hr_inc'])}",
+                                disabled=[c for c in E.columns if c != "الزيادة المعتمدة"],
+                                column_config=cfg, num_rows="fixed")
     if not unlocked:
         st.caption("🔒 لاعتماد العلاوات أدخل كلمة السر في الشريط الجانبي.")
         return

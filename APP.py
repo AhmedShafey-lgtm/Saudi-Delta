@@ -105,7 +105,31 @@ st.markdown("""
     [data-testid="stTable"], table {
         direction: rtl !important;
         width: 100% !important;
-        border-collapse: collapse !important;
+        border-collapse: separate !important;
+        border-spacing: 0 !important;
+    }
+    /* الجداول العريضة: تثبيت رأس الجدول وعمود البند الأول عند التمرير */
+    [data-testid="stTable"] {
+        overflow: auto !important;
+        max-height: 78vh !important;
+    }
+    [data-testid="stTable"] thead th {
+        position: -webkit-sticky !important;
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 3 !important;
+    }
+    [data-testid="stTable"] tbody td:first-child {
+        position: -webkit-sticky !important;
+        position: sticky !important;
+        right: 0 !important;
+        z-index: 2 !important;
+        max-width: none !important;
+        box-shadow: -1px 0 0 0 #CBD5E1 inset;
+    }
+    [data-testid="stTable"] thead th:first-child {
+        right: 0 !important;
+        z-index: 4 !important;
     }
     thead, tbody, tr {
         direction: rtl !important;

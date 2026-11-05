@@ -86,12 +86,25 @@ def _numfmt(df):
     return out
 
 
-def _grid(df, key, height=430, rev=True):
-    """جدول معروض بترتيب أعمدة من اليمين وتنسيق أرقام موحد."""
+def _pin(col):
+    """تثبيت العمود الأساسي عند التمرير الأفقي، ويُتجاهل في إصدارات Streamlit التي لا تدعمه."""
+    try:
+        return {col: st.column_config.Column(col, pinned=True)}
+    except Exception:
+        return None
+
+
+def _grid(df, key, height=430, rev=True, pin=None):
+    """جدول معروض بترتيب أعمدة من اليمين وتنسيق أرقام موحد، مع تثبيت العمود الأساسي عند طلبه."""
     X = df[list(df.columns[::-1])] if rev else df
+    cfg = _pin(pin) if (pin and pin in X.columns) else None
     with _box("sv_grid_" + key):
-        st.dataframe(X.style.format(_numfmt(X), na_rep="—"), hide_index=True,
-                     use_container_width=True, height=height)
+        try:
+            st.dataframe(X.style.format(_numfmt(X), na_rep="—"), hide_index=True,
+                         use_container_width=True, height=height, column_config=cfg)
+        except Exception:
+            st.dataframe(X.style.format(_numfmt(X), na_rep="—"), hide_index=True,
+                         use_container_width=True, height=height)
 
 
 def _onboard(where=""):
@@ -912,7 +925,7 @@ def _wo_cost(bon, mov, sett, wo, pay, ipr, cpr, mp, cfg, site, build):
             "نوع امر العمل", "أشهر التنفيذ", "المواد التشغيلية", "نصيب الرواتب", "إجمالي التكلفة",
             "الهامش", "نسبة التكلفة"]
     X = W[[c for c in cols if c in W.columns]].sort_values("القيمة المنفذة", ascending=False)
-    _grid(X.head(3000), "woc", 430)
+    _grid(X.head(3000), "woc", 430, pin="أمر العمل")
     _note("القيمة التقديرية هي تقدير الكهرباء لأمر العمل عند إصداره، والقيمة المنفذة محسوبة من بونص التنفيذ "
           "بأسعار العقد، ومبلغ شهادة الإنجاز هو المعتمد نهائياً بعد التنفيذ.")
     st.download_button("⬇️ تنزيل تكلفة أوامر العمل (CSV)", X.to_csv(index=False).encode("utf-8-sig"),
@@ -1020,11 +1033,11 @@ def _matlink_view(X, build):
           "الأصناف التي تحتاج تأكيداً لم يُعثر لها على بند في ملفي الربط، وغالبها محولات ومفاتيح ولوحات "
           "تُصرف بتصميم المشروع لا ببند تجميعي.")
     V = A.drop(columns=["مفتاح"]).sort_values(["حالة الربط", "صافي الصرف"], ascending=[True, False])
-    _grid(V, "mlk", 430)
+    _grid(V, "mlk", 430, pin="الصنف")
     st.download_button("⬇️ تنزيل حالة ربط المواد بالبنود (CSV)", V.to_csv(index=False).encode("utf-8-sig"),
                        "material_item_link.csv", "text/csv", key="sv_dl_lnk")
     with st.expander("جدول الربط المعياري كاملاً (المعامل لكل وحدة بند)"):
-        _grid(L, "mlk2", 380)
+        _grid(L, "mlk2", 380, pin="اسم المادة")
 
 
 def _materials(sett, mov, site, build):
@@ -1071,7 +1084,7 @@ def _materials(sett, mov, site, build):
     else:
         V = X[X["فرق المقايسة"] != 0][["أمر العمل", "الصنف", "الوحدة", "التصنيف", "المقايسة", "المندوب", "الصرف",
                                        "الارجاع", "صافي الصرف", "فرق المقايسة", "متبقي صرف", "الحالة"]].sort_values("فرق المقايسة")
-    _grid(V.head(3000), "mat", 430)
+    _grid(V.head(3000), "mat", 430, pin="الصنف")
     st.markdown(
         '<div class="sv-note"><b>معنى الأعمدة:</b> '
         '<b>المقايسة</b> هي الكمية المعتمدة للأمر في تصميم الكهرباء، وهي السقف المسموح صرفه. '
@@ -1134,7 +1147,7 @@ def _wo_base(wo, mov, bon, site, build):
         if pr:
             _grid(pd.DataFrame({"أمر العمل": pr}), "miss", 220, rev=False)
     with st.expander("تفاصيل أوامر العمل"):
-        _grid(W.head(3000), "wod", 400)
+        _grid(W.head(3000), "wod", 400, pin="رقم أمر العمل")
 
 
 def _data_tab(unlocked, cfg):
