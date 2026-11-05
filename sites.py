@@ -66,6 +66,30 @@ def _box(key):
         return st.container()
 
 
+# أعمدة تبقى بخانتين عشريتين لأن قيمتها كسرية بطبيعتها
+_DEC2 = ("نسبة", "معامل", "تطابق", "درجة", "سعر")
+
+
+def _numfmt(df):
+    """تنسيق موحد: فاصلة آلاف بلا كسور، إلا النسب والمعاملات والأسعار فبخانتين."""
+    out = {}
+    for c in df.columns:
+        try:
+            if pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c]):
+                out[c] = "{:,.2f}" if any(k in str(c) for k in _DEC2) else "{:,.0f}"
+        except Exception:
+            continue
+    return out
+
+
+def _grid(df, key, height=430, rev=True):
+    """جدول معروض بترتيب أعمدة من اليمين وتنسيق أرقام موحد."""
+    X = df[list(df.columns[::-1])] if rev else df
+    with _box("sv_grid_" + key):
+        st.dataframe(X.style.format(_numfmt(X), na_rep="—"), hide_index=True,
+                     use_container_width=True, height=height)
+
+
 def _onboard(where=""):
     """شاشة البداية: ماذا يُرفع وبأي ترتيب، تظهر ما دامت بيانات الموقع غير محمّلة."""
     st.markdown(
@@ -76,11 +100,16 @@ def _onboard(where=""):
         '<li><span class="f">تقرير تصفية أوامر العمل</span> — المقايسة والمصروف والمتبقي لكل أمر عمل وصنف.</li>'
         '<li><span class="f">موقف أوامر العمل من الكهرباء</span> — ملف لكل منطقة، ومنه حالة كل أمر وشهادات الإنجاز.</li>'
         '<li><span class="f">تقرير إنتاجية الموقع</span> — التنفيذ الشهري لفرق الشركة ومقاولي الباطن.</li>'
-        '<li><span class="f">تقرير الرواتب التفصيلي</span> و<span class="f">أسعار الأصناف</span> و<span class="f">أسعار بنود العقد</span> — لحساب التكلفة والقيمة المنفذة.</li>'
+        '<li><span class="f">أسعار الأصناف</span> من الحسابات — لتسعير المواد التشغيلية المصروفة في مستودع الموقع.</li>'
+        '<li><span class="f">تقرير الرواتب التفصيلي</span> و<span class="f">أسعار بنود العقد</span> — مرة واحدة للشركة كلها.</li>'
         '</ol>'
-        '<div style="margin-top:10px;color:#475569;font-size:.95rem">البرنامج يتعرّف على نوع كل ملف من محتواه، '
-        'ويستنتج شهر تقرير البونص من اسم الملف أو من أوراقه. بعد الرفع اضبط «جدول ربط بنود الأعمال بالمواد» '
-        'في تبويب مراجعة البونص، فهو أساس المقارنة.</div></div>', unsafe_allow_html=True)
+        '<div style="margin-top:10px;color:#475569;font-size:.95rem">'
+        '<b>تُرفع مرة واحدة للشركة كلها ولا تتكرر مع كل موقع:</b> تقرير الرواتب التفصيلي (يشمل كل المواقع والشهور)، '
+        'وأسعار بنود العقد (الخمسة في ملف واحد)، وموقف أوامر العمل (ملف لكل منطقة يغطي مواقعها). '
+        '<b>وتُرفع لكل موقع على حدة:</b> تقارير البونص وحركة الأصناف وتصفية أوامر العمل وإنتاجية الموقع وأسعار الأصناف. '
+        'البرنامج يتعرّف على نوع كل ملف من محتواه، ويستنتج شهر تقرير البونص من اسم الملف أو من أوراقه. '
+        'بعد الرفع اضبط «جدول ربط بنود الأعمال بالمواد» في تبويب مراجعة البونص، فهو أساس المقارنة.</div></div>',
+        unsafe_allow_html=True)
     if where:
         st.caption(where)
 
@@ -514,12 +543,17 @@ def bonus_value(bon, cpr, cfg, site):
 
 
 def item_price_map(mov_or_set, ipr, mp, site):
-    """سعر وحدة الصرف لكل صنف تشغيلي: سعر الحسابات مقسوماً على معامل التحويل."""
+    """سعر وحدة الصرف لكل صنف تشغيلي: سعر الحسابات مقسوماً على معامل التحويل.
+    الأسعار تُؤخذ من ملف الموقع نفسه، وإن لم يُرفع له ملف تُستخدم أسعار المواقع الأخرى."""
     out = {}
     if not len(mp):
         return out
     M = mp[mp["الموقع"] == site] if "الموقع" in mp.columns else mp
-    pr = ipr.set_index("صنف الحسابات")["متوسط السعر"].to_dict() if len(ipr) else {}
+    I = ipr
+    if len(I) and "الموقع" in I.columns:
+        own = I[I["الموقع"] == site]
+        I = own if len(own) else I.drop_duplicates("صنف الحسابات", keep="last")
+    pr = I.drop_duplicates("صنف الحسابات", keep="last").set_index("صنف الحسابات")["متوسط السعر"].to_dict() if len(I) else {}
     for _, r in M.iterrows():
         if str(r.get("نوع الربط", "")) == "بند أعمال":
             continue
@@ -600,9 +634,7 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
         srows = [("item", k, [str(int(r.عدد)), _fmt(r.صافي_الفرق)]) for k, r in g.iterrows()]
         srows.append(("total", "الإجمالي", [str(int(g.عدد.sum())), _fmt(g.صافي_الفرق.sum())]))
         st.table(build(srows, ["الحالة", "عدد السطور", "صافي الفرق"]))
-        X = V[list(V.columns[::-1])].head(3000)
-        with _box("sv_grid_bon"):
-            st.dataframe(X, hide_index=True, use_container_width=True, height=430)
+        _grid(V.head(3000), "bon", 430)
         st.download_button("⬇️ تنزيل المقارنة (CSV)", T.to_csv(index=False).encode("utf-8-sig"),
                            f"bonus_review_{site}.csv", "text/csv", key="sv_dl_bon")
     with st.expander("🔗 جدول ربط بنود الأعمال بالمواد", expanded=not len(links)):
@@ -611,8 +643,7 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
         nn = notes[(notes["الموقع"] == site)] if len(notes) else pd.DataFrame()
         if len(nn):
             nn = nn[nn["الشهر"].isin(msel)]
-            with _box("sv_grid_notes"):
-                st.dataframe(nn[list(nn.columns[::-1])], hide_index=True, use_container_width=True, height=330)
+            _grid(nn, "notes", 330)
         else:
             st.caption("لا توجد ملاحظات محمّلة.")
     with st.expander("📋 كميات البونص كما وردت"):
@@ -621,8 +652,7 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
         if len(P):
             val = P.groupby("رمز البند")["القيمة"].sum()
             G["القيمة بأسعار العقد"] = G["رمز البند"].map(val)
-        with _box("sv_grid_bq"):
-            st.dataframe(G[list(G.columns[::-1])], hide_index=True, use_container_width=True, height=330)
+        _grid(G, "bq", 330)
 
 
 def _link_editor(bon, mov, mp, site):
@@ -737,8 +767,7 @@ def _wo_cost(bon, mov, sett, wo, pay, ipr, cpr, mp, cfg, site, build):
             "المواد التشغيلية", "نصيب الرواتب", "إجمالي التكلفة", "الهامش", "نسبة التكلفة", "مبلغ شهادة الإنجاز",
             "أصناف الأمر", "مقايسة المواد", "صرف المواد", "متبقي الصرف"]
     X = W[[c for c in cols if c in W.columns]].sort_values("القيمة المنفذة", ascending=False)
-    with _box("sv_grid_woc"):
-        st.dataframe(X[list(X.columns[::-1])].head(3000), hide_index=True, use_container_width=True, height=430)
+    _grid(X.head(3000), "woc", 430)
     st.download_button("⬇️ تنزيل تكلفة أوامر العمل (CSV)", X.to_csv(index=False).encode("utf-8-sig"),
                        f"wo_cost_{site}.csv", "text/csv", key="sv_dl_woc")
 
@@ -815,8 +844,7 @@ def _productivity(prd, bon, mov, pay, ipr, cpr, mp, cfg, site, build):
     _note("تكلفة مقاولي الباطن غير محمّلة هنا، فهامش فرق الشركة لا يشملها.")
     if len(P):
         with st.expander("تقرير الموقع كما ورد"):
-            with _box("sv_grid_prd"):
-                st.dataframe(P[list(P.columns[::-1])], hide_index=True, use_container_width=True, height=330)
+            _grid(P, "prd", 330)
 
 
 def _materials(sett, mov, site, build):
@@ -851,8 +879,7 @@ def _materials(sett, mov, site, build):
     else:
         V = X[X["فرق المقايسة"] != 0][["أمر العمل", "الصنف", "الوحدة", "التصنيف", "المقايسة", "المندوب", "الصرف",
                                        "الارجاع", "صافي الصرف", "فرق المقايسة", "متبقي صرف", "الحالة"]].sort_values("فرق المقايسة")
-    with _box("sv_grid_mat"):
-        st.dataframe(V[list(V.columns[::-1])].head(3000), hide_index=True, use_container_width=True, height=430)
+    _grid(V.head(3000), "mat", 430)
     st.download_button("⬇️ تنزيل انحرافات المواد (CSV)", V.to_csv(index=False).encode("utf-8-sig"),
                        f"materials_dev_{site}.csv", "text/csv", key="sv_dl_mat")
 
@@ -871,8 +898,7 @@ def _wo_base(wo, mov, bon, site, build):
     rows = [("item", k, [str(int(v))]) for k, v in s.items()]
     rows.append(("total", "الإجمالي", [str(int(s.sum()))]))
     st.table(build(rows, ["موقف أمر العمل", "عدد الأوامر"]))
-    with _box("sv_grid_wos"):
-        st.dataframe(G[list(G.columns[::-1])], hide_index=True, use_container_width=True, height=330)
+    _grid(G, "wos", 330)
     # أوامر في المستودع ولا توجد لدى الكهرباء
     if len(mov):
         M = mov[mov["الموقع"] == site]
@@ -883,11 +909,9 @@ def _wo_base(wo, mov, bon, site, build):
         c1.caption(f"أوامر طوارئ في المستودع خارج تقرير الكهرباء: {len(em):,} (التقرير لا يشمل الطوارئ)")
         c2.caption(f"أوامر مشاريع في المستودع ولا توجد في تقرير الكهرباء: {len(pr):,}")
         if pr:
-            with _box("sv_grid_miss"):
-                st.dataframe(pd.DataFrame({"أمر العمل": pr}), hide_index=True, use_container_width=True, height=220)
+            _grid(pd.DataFrame({"أمر العمل": pr}), "miss", 220, rev=False)
     with st.expander("تفاصيل أوامر العمل"):
-        with _box("sv_grid_wod"):
-            st.dataframe(W[list(W.columns[::-1])].head(3000), hide_index=True, use_container_width=True, height=400)
+        _grid(W.head(3000), "wod", 400)
 
 
 def _data_tab(unlocked, cfg):
@@ -961,9 +985,16 @@ def _data_tab(unlocked, cfg):
                     log.append(f"✅ {f.name}: الرواتب — {len(p):,} سطر موقع/شهر.")
                 elif kind == "أسعار الأصناف":
                     p = parse_item_prices(raw)
-                    st.session_state["sv_ipr"] = p
-                    _save(p, F_IPR)
-                    log.append(f"✅ {f.name}: أسعار الأصناف — {len(p)} صنف.")
+                    p["الموقع"] = site
+                    old = st.session_state["sv_ipr"]
+                    if len(old) and "الموقع" in old.columns:
+                        old = old[old["الموقع"] != site]
+                    elif len(old):
+                        old = old.assign(**{"الموقع": ""})
+                    out = pd.concat([old, p], ignore_index=True) if len(old) else p
+                    st.session_state["sv_ipr"] = out
+                    _save(out, F_IPR)
+                    log.append(f"✅ {f.name}: أسعار الأصناف لموقع {site} — {len(p)} صنف.")
                 elif kind == "أسعار العقد":
                     p = parse_contract_prices(raw)
                     st.session_state["sv_cpr"] = p
