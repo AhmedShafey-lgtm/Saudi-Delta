@@ -21,6 +21,10 @@ F_CPR = os.path.join(HERE, "st_contractprices.csv")
 F_PAY = os.path.join(HERE, "st_pay.csv.gz")
 F_MAP = os.path.join(HERE, "st_map.csv")
 F_CFG = os.path.join(HERE, "st_settings.json")
+# جدول ربط المواد ببنود الأعمال، مفتاحه كود الشركة المعدّل (40 + كود الكتالوج + U)
+F_LNK = os.path.join(HERE, "sites_matlink.csv")
+# تصنيف الأصناف المعتمد من الشركة (عهدة / تشغيلية) لما لا يرد في جدول تصنيف تقرير الحركة
+F_CLS = os.path.join(HERE, "st_itemclass.csv")
 
 CSS = """
 <style>
@@ -194,6 +198,8 @@ def detect(raw, name=""):
         return "أسعار الأصناف"
     if {"رقم البند", "نوع البند"} <= H or {"Item", "Line type"} <= H:
         return "أسعار العقد"
+    if {"كود الصنف", "التصنيف المعتمد"} <= H:
+        return "تصنيف الأصناف"
     return ""
 
 
@@ -355,7 +361,7 @@ def parse_wo(raw):
     D["جيل العقد"] = np.where(D["رقم العقد"].isin(NEW_CONTRACTS), "العقد الحالي 2026", "العقد السابق")
     agg = {"الموقع": "first", "جيل العقد": "first", "المكتب": "first", "المنطقة": "first",
            "نوع امر العمل": "first", "موقف أمر العمل": "last", "حالة الصرف": "last",
-           "تكلفة المواد المصروفه": "max", "تكلفة المواد الغير مصروفه": "max",
+           "تكلفة المواد المصروفه": "max", "تكلفة المواد الغير مصروفه": "max", "تكلفة العمالة": "max",
            "مبلغ شهادة الإنجاز": "sum", "تاريخ التسليم للمقاول": "min",
            "تاريخ الاستلام من المقاول": "max", "تاريخ شهادة الانجاز": "max", "تاريخ المستخلص": "max"}
     agg = {k: v for k, v in agg.items() if k in D.columns}
@@ -542,29 +548,152 @@ def bonus_value(bon, cpr, cfg, site):
     return B
 
 
-def item_price_map(mov_or_set, ipr, mp, site):
-    """سعر وحدة الصرف لكل صنف تشغيلي: سعر الحسابات مقسوماً على معامل التحويل.
-    الأسعار تُؤخذ من ملف الموقع نفسه، وإن لم يُرفع له ملف تُستخدم أسعار المواقع الأخرى."""
-    out = {}
-    if not len(mp):
-        return out
-    M = mp[mp["الموقع"] == site] if "الموقع" in mp.columns else mp
+def _ckey(s):
+    """توحيد كود الصنف للمطابقة: بلا فراغات وبحرف كبير."""
+    return pd.Series(s).astype(str).str.replace(r"\s+", "", regex=True).str.upper()
+
+
+@st.cache_data(show_spinner=False)
+def matlink():
+    """جدول ربط المواد ببنود الأعمال المستخرج من ملفي الربط، مفتاحه كود الشركة المعدّل."""
+    if not os.path.exists(F_LNK):
+        return pd.DataFrame()
+    try:
+        D = pd.read_csv(F_LNK, dtype=str).fillna("")
+    except Exception:
+        return pd.DataFrame()
+    D["المعامل"] = pd.to_numeric(D.get("المعامل"), errors="coerce").fillna(0.0)
+    D["كود المادة"] = _ckey(D["كود المادة"])
+    return D
+
+
+_AR_STOP = {"ال", "مقاس", "عادي", "عاده", "سم", "مم", "ملم", "حبه", "كيلو", "كجم", "من", "مع", "الي", "لون"}
+
+
+def _ar(s):
+    """تبسيط الاسم العربي: حذف التشكيل وتوحيد الألف والهاء والياء وإزالة الرموز."""
+    s = re.sub(r"[ً-ْـ]", "", str(s or ""))
+    for a, b in (("أ", "ا"), ("إ", "ا"), ("آ", "ا"), ("ة", "ه"), ("ى", "ي"), ("ؤ", "و"), ("ئ", "ي")):
+        s = s.replace(a, b)
+    return re.sub(r"\s+", " ", re.sub(r"[^0-9A-Za-zء-ي]+", " ", s)).strip()
+
+
+def parse_item_class(raw):
+    """ملف تصنيف الأصناف المعتمد: كود الصنف + الاسم + التصنيف المعتمد."""
+    ws = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True).worksheets[0]
+    rows = [r for r in ws.iter_rows(values_only=True) if r and any(x is not None for x in r)]
+    h = next(i for i, r in enumerate(rows) if any(_norm(x) == "كود الصنف" for x in r if x is not None))
+    idx = {_norm(x): j for j, x in enumerate(rows[h]) if x is not None}
+    ck, cn, cc = idx.get("كود الصنف"), idx.get("الصنف"), idx.get("التصنيف المعتمد")
+    out = []
+    for r in rows[h + 1:]:
+        if ck is None or r[ck] is None or cc is None or r[cc] is None:
+            continue
+        out.append({"كود الصنف": _norm(r[ck]), "الصنف": _norm(r[cn]) if cn is not None else "",
+                    "التصنيف": _norm(r[cc])})
+    return pd.DataFrame(out).drop_duplicates("كود الصنف")
+
+
+def class_map():
+    """التصنيف المعتمد مفتاحه كود الصنف."""
+    if not os.path.exists(F_CLS):
+        return {}
+    try:
+        D = pd.read_csv(F_CLS, dtype=str).fillna("")
+    except Exception:
+        return {}
+    return dict(zip(_ckey(D["كود الصنف"]), D["التصنيف"]))
+
+
+def _ar_tok(s):
+    t = set()
+    for w in _ar(s).split():
+        w = w[2:] if (len(w) > 4 and w.startswith("ال")) else w
+        if len(w) >= 2 and w not in _AR_STOP:
+            t.add(w)
+    return t
+
+
+def _best_name(name, cands, cut=0.50):
+    """أقرب اسم في قائمة أسماء الحسابات: تطابق نصي ثم تداخل كلمات."""
+    a, t = _ar(name), _ar_tok(name)
+    if not t:
+        return None, 0.0
+    best, bs = None, 0.0
+    for c in cands:
+        b = _ar(c)
+        if b == a:
+            return c, 1.0
+        u = _ar_tok(c)
+        if not u:
+            continue
+        s = len(t & u) / len(t | u)
+        if min(len(a), len(b)) >= 8 and (a in b or b in a):
+            s = max(s, 0.85)
+        if s > bs:
+            bs, best = s, c
+    return (best, round(bs, 2)) if bs >= cut else (None, round(bs, 2))
+
+
+def item_price_map(mov_or_set, ipr, mp, site, detail=False):
+    """سعر وحدة الصرف لكل صنف تشغيلي: جدول الربط اليدوي أولاً، ثم مطابقة اسم المستودع باسم الحسابات آلياً."""
+    out, rev = {}, []
     I = ipr
     if len(I) and "الموقع" in I.columns:
         own = I[I["الموقع"] == site]
         I = own if len(own) else I.drop_duplicates("صنف الحسابات", keep="last")
     pr = I.drop_duplicates("صنف الحسابات", keep="last").set_index("صنف الحسابات")["متوسط السعر"].to_dict() if len(I) else {}
-    for _, r in M.iterrows():
-        if str(r.get("نوع الربط", "")) == "بند أعمال":
-            continue
-        acc, f = r.get("المادة"), r.get("معامل")
-        try:
-            f = float(f) if pd.notna(f) and float(f) else 1.0
-        except Exception:
+    manual = set()
+    if len(mp):
+        M = mp[mp["الموقع"] == site] if "الموقع" in mp.columns else mp
+        for _, r in M.iterrows():
+            if str(r.get("نوع الربط", "")) == "بند أعمال":
+                continue
+            acc = r.get("المادة")
+            try:
+                f = float(r.get("معامل")) if pd.notna(r.get("معامل")) and float(r.get("معامل")) else 1.0
+            except Exception:
+                f = 1.0
+            p = pr.get(acc)
+            k = str(r.get("كود المادة", "")) or str(r.get("بند الأعمال", ""))
+            if p is not None and pd.notna(p) and k:
+                out[k] = float(p) / f
+                manual.add(k)
+                rev.append({"كود الصنف": k, "صنف المستودع": "", "صنف الحسابات": acc, "درجة التطابق": 1.0,
+                            "سعر الحسابات": float(p), "معامل التحويل": f, "سعر وحدة الصرف": float(p) / f,
+                            "المصدر": "جدول الربط اليدوي"})
+    # المطابقة الآلية لما لم يرد في جدول الربط، مع استنتاج معامل التحويل من الكميات
+    D = mov_or_set
+    if len(D) and len(pr) and "الصنف" in D.columns:
+        W = D[D["التصنيف"].astype(str).str.startswith("مواد تشغيلية")] if "التصنيف" in D.columns else D
+        if "نوع المعاملة" in W.columns:
+            sg = np.where(W["نوع المعاملة"] == ISSUE, 1.0, np.where(W["نوع المعاملة"] == RET, -1.0, 0.0))
+            q = W.assign(**{"_q": W["الكمية"] * sg}).groupby("الصنف")["_q"].sum()
+        else:
+            q = W.groupby("الصنف")["صافي الصرف"].sum() if "صافي الصرف" in W.columns else pd.Series(dtype=float)
+        aq = I.drop_duplicates("صنف الحسابات", keep="last").set_index("صنف الحسابات")["الكمية المستلمة"].to_dict() if len(I) else {}
+        cands = list(pr)
+        for _, r in W.drop_duplicates("الصنف").iterrows():
+            nm = r.get("الصنف")
+            k = str(r.get("كود الصنف", "")) or str(nm)
+            if not k or k in manual:
+                continue
+            acc, s = _best_name(nm, cands)
+            p = pr.get(acc) if acc else None
+            qw, qa = float(q.get(nm, 0) or 0), float(aq.get(acc, 0) or 0) if acc else 0.0
             f = 1.0
-        p = pr.get(acc)
-        if p is not None and pd.notna(p):
-            out[str(r.get("كود المادة", "")) or str(r.get("بند الأعمال", ""))] = float(p) / f
+            if qw > 0 and qa > 0 and qw / qa > 3:
+                f = max(1.0, round(qw / qa))
+            u = (float(p) / f) if (p is not None and pd.notna(p)) else np.nan
+            rev.append({"كود الصنف": k, "صنف المستودع": nm, "صنف الحسابات": acc or "—", "درجة التطابق": s,
+                        "كمية المستودع": qw, "كمية الحسابات": qa,
+                        "سعر الحسابات": (float(p) if p is not None and pd.notna(p) else np.nan),
+                        "معامل التحويل": f, "سعر وحدة الصرف": u,
+                        "المصدر": ("مطابقة الاسم آلياً" if f == 1 else "مطابقة الاسم مع معامل محسوب") if acc else "بلا سعر"})
+            if pd.notna(u):
+                out[k] = u
+    if detail:
+        return out, pd.DataFrame(rev)
     return out
 
 
@@ -722,7 +851,7 @@ def _wo_cost(bon, mov, sett, wo, pay, ipr, cpr, mp, cfg, site, build):
         **{"القيمة المنفذة": ("القيمة", "sum"), "نصيب الرواتب": ("نصيب الأمر من الرواتب", "sum"),
            "أشهر التنفيذ": ("الشهر", lambda s: ", ".join(str(int(x)) for x in sorted(set(s))))})
     # المواد التشغيلية من حركة الأصناف للسنة نفسها
-    prices = item_price_map(mov, ipr, mp, site)
+    prices, prev = item_price_map(mov, ipr, mp, site, detail=True)
     if len(mov):
         M = mov[(mov["الموقع"] == site) & (mov["السنة"] == yr) & (mov["التصنيف"].astype(str).str.startswith("مواد تشغيلية"))].copy()
         M["سعر"] = M["كود الصنف"].astype(str).map(prices)
@@ -732,19 +861,15 @@ def _wo_cost(bon, mov, sett, wo, pay, ipr, cpr, mp, cfg, site, build):
         M["التكلفة"] = M["الكمية"] * M["سعر"].fillna(0.0) * sign
         oc = M.groupby("أمر العمل", as_index=False)["التكلفة"].sum().rename(columns={"التكلفة": "المواد التشغيلية"})
         W = W.merge(oc, on="أمر العمل", how="outer")
-    if len(sett):
-        S = sett[sett["الموقع"] == site]
-        sm2 = S.groupby("أمر العمل", as_index=False).agg(
-            **{"أصناف الأمر": ("الصنف", "nunique"), "مقايسة المواد": ("المقايسة", "sum"),
-               "صرف المواد": ("صافي الصرف", "sum"), "متبقي الصرف": ("متبقي صرف", "sum")})
-        W = W.merge(sm2, on="أمر العمل", how="left")
     if len(wo):
         K = wo[wo["الموقع"] == site].copy()
         if "تاريخ المستخلص" in K.columns:
             K = K.sort_values("تاريخ المستخلص")
-        K = K.groupby("رقم أمر العمل", as_index=False).agg(
-            **{"موقف أمر العمل": ("موقف أمر العمل", "last"), "نوع امر العمل": ("نوع امر العمل", "first"),
-               "المكتب": ("المكتب", "first"), "مبلغ شهادة الإنجاز": ("مبلغ شهادة الإنجاز", "sum")})
+        a = {"موقف أمر العمل": ("موقف أمر العمل", "last"), "نوع امر العمل": ("نوع امر العمل", "first"),
+             "المكتب": ("المكتب", "first"), "مبلغ شهادة الإنجاز": ("مبلغ شهادة الإنجاز", "sum")}
+        if "تكلفة العمالة" in K.columns:
+            a["القيمة التقديرية"] = ("تكلفة العمالة", "max")
+        K = K.groupby("رقم أمر العمل", as_index=False).agg(**a)
         W = W.merge(K, left_on="أمر العمل", right_on="رقم أمر العمل", how="left").drop(columns=["رقم أمر العمل"])
     W["النوع"] = W.get("النوع", pd.Series(index=W.index, dtype=object))
     W["النوع"] = np.where(W["أمر العمل"].astype(str).str.startswith("42"), "طوارئ", "مشروع")
@@ -762,12 +887,34 @@ def _wo_cost(bon, mov, sett, wo, pay, ipr, cpr, mp, cfg, site, build):
     rows.append(("total", "الإجمالي", [str(int(g.عدد.sum())), _fmt(g.منفذ.sum()), _fmt(g.مواد.sum()),
                                        _fmt(g.رواتب.sum()), _fmt(g.تكلفة.sum()), _fmt(g.هامش.sum())]))
     st.table(build(rows, ["النوع", "عدد الأوامر", "القيمة المنفذة", "المواد التشغيلية", "نصيب الرواتب", "إجمالي التكلفة", "الهامش"]))
-    _note("توزيع الرواتب على أوامر العمل بنسبة قيمة البونص المنفذة في كل شهر. مواد العهدة من الكهرباء لا تدخل التكلفة.")
-    cols = ["أمر العمل", "النوع", "موقف أمر العمل", "نوع امر العمل", "المكتب", "أشهر التنفيذ", "القيمة المنفذة",
-            "المواد التشغيلية", "نصيب الرواتب", "إجمالي التكلفة", "الهامش", "نسبة التكلفة", "مبلغ شهادة الإنجاز",
-            "أصناف الأمر", "مقايسة المواد", "صرف المواد", "متبقي الصرف"]
+    _note("توزيع الرواتب على أوامر العمل بنسبة قيمة البونص المنفذة في كل شهر. مواد العهدة من الكهرباء لا تدخل التكلفة، "
+          "وحركتها معروضة في قسم «انحرافات المواد».")
+    if len(prev):
+        n_auto = int((prev["المصدر"] == "مطابقة الاسم آلياً").sum())
+        n_no = int((prev["المصدر"] == "بلا سعر").sum())
+        if n_no:
+            _note(f"{n_no} صنفاً تشغيلياً بلا سعر في تقرير أسعار الأصناف، فتكلفته صفر. راجع جدول التسعير أدناه.")
+        with st.expander(f"تسعير المواد التشغيلية ({n_auto} صنفاً سُعِّر بمطابقة الاسم آلياً)"):
+            _grid(prev.sort_values("درجة التطابق"), "prc", 330)
+    # العرض: الموقع مختار من أعلى التبويب، والمكتب هو المستوى الأدنى داخله
+    offs = sorted(x for x in W.get("المكتب", pd.Series(dtype=object)).dropna().unique() if str(x).strip())
+    if offs:
+        pick = st.selectbox("العرض داخل الموقع", ["كل المكاتب"] + offs, key="sv_woc_off")
+        if pick != "كل المكاتب":
+            W = W[W["المكتب"] == pick]
+        o = W.groupby("المكتب").agg(عدد=("أمر العمل", "size"), منفذ=("القيمة المنفذة", "sum"),
+                                    تكلفة=("إجمالي التكلفة", "sum"), هامش=("الهامش", "sum"))
+        if len(o) > 1:
+            rows = [("item", k, [str(int(r.عدد)), _fmt(r.منفذ), _fmt(r.تكلفة), _fmt(r.هامش)]) for k, r in o.iterrows()]
+            rows.append(("total", "الإجمالي", [str(int(o.عدد.sum())), _fmt(o.منفذ.sum()), _fmt(o.تكلفة.sum()), _fmt(o.هامش.sum())]))
+            st.table(build(rows, ["المكتب", "عدد الأوامر", "القيمة المنفذة", "إجمالي التكلفة", "الهامش"]))
+    cols = ["أمر العمل", "القيمة التقديرية", "القيمة المنفذة", "مبلغ شهادة الإنجاز", "النوع", "موقف أمر العمل",
+            "نوع امر العمل", "أشهر التنفيذ", "المواد التشغيلية", "نصيب الرواتب", "إجمالي التكلفة",
+            "الهامش", "نسبة التكلفة"]
     X = W[[c for c in cols if c in W.columns]].sort_values("القيمة المنفذة", ascending=False)
     _grid(X.head(3000), "woc", 430)
+    _note("القيمة التقديرية هي تقدير الكهرباء لأمر العمل عند إصداره، والقيمة المنفذة محسوبة من بونص التنفيذ "
+          "بأسعار العقد، ومبلغ شهادة الإنجاز هو المعتمد نهائياً بعد التنفيذ.")
     st.download_button("⬇️ تنزيل تكلفة أوامر العمل (CSV)", X.to_csv(index=False).encode("utf-8-sig"),
                        f"wo_cost_{site}.csv", "text/csv", key="sv_dl_woc")
 
@@ -847,6 +994,39 @@ def _productivity(prd, bon, mov, pay, ipr, cpr, mp, cfg, site, build):
             _grid(P, "prd", 330)
 
 
+def _matlink_view(X, build):
+    """المواد المصروفة في الموقع مقابل جدول الربط ببنود الأعمال (مفتاحه كود الشركة المعدّل)."""
+    L = matlink()
+    if not len(L):
+        _note("ملف جدول الربط (sites_matlink.csv) غير موجود بجانب البرنامج.")
+        return
+    A = X.groupby(["كود الصنف", "الصنف", "الوحدة", "التصنيف"], as_index=False).agg(
+        **{"أوامر": ("أمر العمل", "nunique"), "المقايسة": ("المقايسة", "sum"),
+           "صافي الصرف": ("صافي الصرف", "sum"), "الفرق": ("فرق المقايسة", "sum")})
+    A["مفتاح"] = _ckey(A["كود الصنف"])
+    g = L.groupby("كود المادة").agg(**{"عدد البنود المرتبطة": ("كود بند الأعمال", "nunique"),
+                                       "البنود": ("بند الأعمال", lambda s: " | ".join(sorted(set(s))[:4]))})
+    A = A.merge(g, left_on="مفتاح", right_index=True, how="left")
+    A["عدد البنود المرتبطة"] = A["عدد البنود المرتبطة"].fillna(0).astype(int)
+    A["البنود"] = A["البنود"].fillna("—")
+    A["حالة الربط"] = np.where(A["عدد البنود المرتبطة"] > 0, "مرتبط ببنود محددة",
+                               np.where(A["التصنيف"].astype(str).str.startswith("مواد تشغيلية"),
+                                        "مادة تشغيلية (بنود الحفر والأسفلت والبلاط)", "يحتاج تأكيد الربط"))
+    s = A.groupby("حالة الربط").agg(أصناف=("الصنف", "size"), صرف=("صافي الصرف", "sum"))
+    rows = [("item", k, [str(int(r.أصناف)), _fmt(r.صرف)]) for k, r in s.iterrows()]
+    rows.append(("total", "الإجمالي", [str(int(s.أصناف.sum())), _fmt(s.صرف.sum())]))
+    st.table(build(rows, ["حالة الربط", "عدد الأصناف", "صافي الصرف"]))
+    _note("جدول الربط مبني على الأسماء: اسم المادة بتكويد الشركة مقابل اسم بند الأعمال، ومفتاحه كود المادة. "
+          "الأصناف التي تحتاج تأكيداً لم يُعثر لها على بند في ملفي الربط، وغالبها محولات ومفاتيح ولوحات "
+          "تُصرف بتصميم المشروع لا ببند تجميعي.")
+    V = A.drop(columns=["مفتاح"]).sort_values(["حالة الربط", "صافي الصرف"], ascending=[True, False])
+    _grid(V, "mlk", 430)
+    st.download_button("⬇️ تنزيل حالة ربط المواد بالبنود (CSV)", V.to_csv(index=False).encode("utf-8-sig"),
+                       "material_item_link.csv", "text/csv", key="sv_dl_lnk")
+    with st.expander("جدول الربط المعياري كاملاً (المعامل لكل وحدة بند)"):
+        _grid(L, "mlk2", 380)
+
+
 def _materials(sett, mov, site, build):
     _title("انحرافات المواد")
     S = sett[sett["الموقع"] == site] if len(sett) else pd.DataFrame()
@@ -855,13 +1035,22 @@ def _materials(sett, mov, site, build):
         return
     c1, c2 = st.columns(2)
     kind = c1.radio("التصنيف", ["الكل", "مواد العهدة", "المواد التشغيلية"], horizontal=True, key="sv_mk")
-    lvl = c2.radio("العرض", ["حسب الصنف", "حسب أمر العمل"], horizontal=True, key="sv_ml")
+    lvl = c2.radio("العرض", ["حسب الصنف", "حسب أمر العمل", "الربط ببنود الأعمال"], horizontal=True, key="sv_ml")
     X = S.copy()
-    if len(mov):
-        cls = mov.drop_duplicates("الصنف").set_index("الصنف")["التصنيف"].to_dict()
-        X["التصنيف"] = X["الصنف"].map(cls).fillna("غير مصنف")
+    cls = mov.drop_duplicates("الصنف").set_index("الصنف")["التصنيف"].to_dict() if len(mov) else {}
+    X["التصنيف"] = X["الصنف"].map(cls)
+    cm = class_map()
+    if cm:
+        ov = _ckey(X["كود الصنف"]).map(cm)
+        X["التصنيف"] = ov.where(ov.notna() & (ov != ""), X["التصنيف"])
+        X["مصدر التصنيف"] = np.where(ov.notna() & (ov != ""), "التصنيف المعتمد",
+                                     np.where(X["التصنيف"].notna(), "جدول التصنيف", "مستنتج"))
     else:
-        X["التصنيف"] = "غير مصنف"
+        X["مصدر التصنيف"] = np.where(X["التصنيف"].notna(), "جدول التصنيف", "مستنتج")
+    # ما لم يرد في جدول التصنيف يُستنتج من نمط الكود: مواد الكهرباء تحمل كود 40…U
+    sec = _ckey(X["كود الصنف"]).str.fullmatch(r"40\d{7}U").fillna(False)
+    X["التصنيف"] = X["التصنيف"].fillna(pd.Series(np.where(sec, "مواد عهدة من الكهرباء",
+                                                          "مواد تشغيلية توفرها الشركة"), index=X.index))
     if kind == "مواد العهدة":
         X = X[X["التصنيف"].astype(str).str.startswith("مواد عهدة")]
     elif kind == "المواد التشغيلية":
@@ -872,6 +1061,9 @@ def _materials(sett, mov, site, build):
     rows = [("item", k, [str(int(r.سطور)), str(int(r.أوامر)), _fmt(r.فرق)]) for k, r in g.iterrows()]
     rows.append(("total", "الإجمالي", [str(int(g.سطور.sum())), str(int(X["أمر العمل"].nunique())), _fmt(g.فرق.sum())]))
     st.table(build(rows, ["الحالة", "عدد السطور", "عدد الأوامر", "صافي الفرق"]))
+    if lvl == "الربط ببنود الأعمال":
+        _matlink_view(X, build)
+        return
     if lvl == "حسب الصنف":
         V = X.groupby(["الصنف", "الوحدة", "التصنيف"], as_index=False).agg(
             **{"أوامر": ("أمر العمل", "nunique"), "المقايسة": ("المقايسة", "sum"), "صافي الصرف": ("صافي الصرف", "sum"),
@@ -880,8 +1072,26 @@ def _materials(sett, mov, site, build):
         V = X[X["فرق المقايسة"] != 0][["أمر العمل", "الصنف", "الوحدة", "التصنيف", "المقايسة", "المندوب", "الصرف",
                                        "الارجاع", "صافي الصرف", "فرق المقايسة", "متبقي صرف", "الحالة"]].sort_values("فرق المقايسة")
     _grid(V.head(3000), "mat", 430)
+    st.markdown(
+        '<div class="sv-note"><b>معنى الأعمدة:</b> '
+        '<b>المقايسة</b> هي الكمية المعتمدة للأمر في تصميم الكهرباء، وهي السقف المسموح صرفه. '
+        '<b>صافي الصرف</b> = المصروف فعلاً من المستودع ناقص المرتجع، أي ما استُهلك بالفعل. '
+        '<b>متبقي الصرف</b> = المقايسة ناقص ما صُرف، أي الكمية التي ما زال من حق الأمر صرفها. '
+        '<b>الفرق</b> = صافي الصرف ناقص المقايسة: موجبه صرف زائد عن المعتمد ويُحاسب عليه المقاول أو يحتاج أمر تعديل، '
+        'وسالبه صرف أقل من المعتمد فإما أن التنفيذ لم يكتمل أو أن المقايسة أعلى من الواقع.</div>',
+        unsafe_allow_html=True)
     st.download_button("⬇️ تنزيل انحرافات المواد (CSV)", V.to_csv(index=False).encode("utf-8-sig"),
                        f"materials_dev_{site}.csv", "text/csv", key="sv_dl_mat")
+    # أصناف لم ترد في جدول تصنيف المواد، تُصدَّر ليُعتمد تصنيفها
+    if "مصدر التصنيف" in X.columns:
+        U = X[X["مصدر التصنيف"] == "مستنتج"].groupby(["كود الصنف", "الصنف", "الوحدة"], as_index=False).agg(
+            **{"التصنيف المقترح": ("التصنيف", "first"), "صافي الصرف": ("صافي الصرف", "sum")})
+        if len(U):
+            U["التصنيف المعتمد"] = ""
+            _note(f"{len(U)} صنفاً لم يرد في جدول تصنيف المواد المرفق بحركة الأصناف، وصُنِّف استنتاجاً من نمط الكود.")
+            st.download_button("⬇️ تنزيل الأصناف غير المصنفة لاعتماد تصنيفها (CSV)",
+                               U.to_csv(index=False).encode("utf-8-sig"),
+                               f"unclassified_items_{site}.csv", "text/csv", key="sv_dl_unc")
 
 
 def _wo_base(wo, mov, bon, site, build):
@@ -889,16 +1099,29 @@ def _wo_base(wo, mov, bon, site, build):
     if not len(wo):
         _onboard("قاعدة أوامر العمل تحتاج: ملفات موقف أوامر العمل من الكهرباء (ملف لكل منطقة).")
         return
-    scope = st.radio("النطاق", ["الموقع المختار", "كل المواقع"], horizontal=True, key="sv_wsc")
-    W = wo if scope == "كل المواقع" else wo[wo["الموقع"] == site]
-    G = W.groupby(["الموقع", "جيل العقد", "موقف أمر العمل"], as_index=False).agg(
-        **{"عدد": ("رقم أمر العمل", "size"), "مواد مصروفة": ("تكلفة المواد المصروفه", "sum"),
-           "شهادات الإنجاز": ("مبلغ شهادة الإنجاز", "sum")})
-    s = W.groupby("موقف أمر العمل").size().sort_values(ascending=False)
-    rows = [("item", k, [str(int(v))]) for k, v in s.items()]
-    rows.append(("total", "الإجمالي", [str(int(s.sum()))]))
-    st.table(build(rows, ["موقف أمر العمل", "عدد الأوامر"]))
-    _grid(G, "wos", 330)
+    scope = st.radio("العرض", ["كل العقود", "الموقع المختار"], horizontal=True, key="sv_wsc")
+    W = wo if scope == "كل العقود" else wo[wo["الموقع"] == site]
+    if not len(W):
+        _note("لا توجد أوامر عمل لهذا الموقع في الملفات المرفوعة.")
+        return
+    if "القيمة التقديرية" not in W.columns and "تكلفة العمالة" in W.columns:
+        W = W.rename(columns={"تكلفة العمالة": "القيمة التقديرية"})
+    for c in ("القيمة التقديرية", "مبلغ شهادة الإنجاز"):
+        if c not in W.columns:
+            W[c] = np.nan
+    g = W.groupby(["جيل العقد", "الموقع"], as_index=False).agg(
+        **{"عدد الأوامر": ("رقم أمر العمل", "size"), "القيمة التقديرية": ("القيمة التقديرية", "sum"),
+           "القيمة النهائية": ("مبلغ شهادة الإنجاز", "sum")})
+    g["فرق التنفيذ عن التقدير"] = g["القيمة النهائية"] - g["القيمة التقديرية"]
+    s = W.groupby("موقف أمر العمل").agg(**{"عدد": ("رقم أمر العمل", "size"),
+                                           "تقديرية": ("القيمة التقديرية", "sum"),
+                                           "نهائية": ("مبلغ شهادة الإنجاز", "sum")}).sort_values("عدد", ascending=False)
+    rows = [("item", k, [str(int(r.عدد)), _fmt(r.تقديرية), _fmt(r.نهائية)]) for k, r in s.iterrows()]
+    rows.append(("total", "الإجمالي", [str(int(s.عدد.sum())), _fmt(s.تقديرية.sum()), _fmt(s.نهائية.sum())]))
+    st.table(build(rows, ["موقف أمر العمل", "عدد الأوامر", "القيمة التقديرية", "القيمة النهائية"]))
+    _note("القيمة التقديرية هي تقدير الكهرباء عند إصدار الأمر، والقيمة النهائية هي مبلغ شهادة الإنجاز بعد التنفيذ. "
+          "الأوامر التي لم تصدر لها شهادة إنجاز بعد تظهر بقيمة نهائية صفر.")
+    _grid(g.sort_values(["جيل العقد", "القيمة التقديرية"], ascending=[True, False]), "wos", 330)
     # أوامر في المستودع ولا توجد لدى الكهرباء
     if len(mov):
         M = mov[mov["الموقع"] == site]
@@ -995,6 +1218,11 @@ def _data_tab(unlocked, cfg):
                     st.session_state["sv_ipr"] = out
                     _save(out, F_IPR)
                     log.append(f"✅ {f.name}: أسعار الأصناف لموقع {site} — {len(p)} صنف.")
+                elif kind == "تصنيف الأصناف":
+                    p = parse_item_class(raw)
+                    _save(p, F_CLS)
+                    class_map.clear() if hasattr(class_map, "clear") else None
+                    log.append(f"✅ {f.name}: تصنيف الأصناف المعتمد — {len(p):,} صنف.")
                 elif kind == "أسعار العقد":
                     p = parse_contract_prices(raw)
                     st.session_state["sv_cpr"] = p
