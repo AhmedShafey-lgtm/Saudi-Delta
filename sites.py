@@ -54,7 +54,7 @@ OFFICE_SPLIT = {"المخواة": "المخواة", "المخواه": "المخ�
 MONTHS_AR = {"يناير": 1, "فبراير": 2, "مارس": 3, "أبريل": 4, "ابريل": 4, "مايو": 5, "يونيو": 6, "يوليو": 7,
              "أغسطس": 8, "اغسطس": 8, "سبتمبر": 9, "أكتوبر": 10, "اكتوبر": 10, "نوفمبر": 11, "ديسمبر": 12}
 ISSUE, EST, RET = "صرف أمر العمل", "أمر العمل", "استلام صرف أمر العمل"
-DEFAULT_CFG = {"site": "الرياض", "rd_factor": 18.0, "alloc": "نسبة البونص", "m_from": 3, "m_to": 9, "year": 2026,
+DEFAULT_CFG = {"site": "الرياض", "rd_factor": 18.0, "alloc": "نسبة البونص", "m_from": 1, "m_to": 12, "year": 2026,
                "asphalt_code": "306010001", "asphalt_pct": 40.0, "emg_pct": 45.0}
 
 
@@ -465,6 +465,8 @@ def _state():
                 cfg.update(json.load(open(F_CFG, encoding="utf-8")))
         except Exception:
             pass
+        if int(cfg.get("m_from", 1)) == 3 and int(cfg.get("m_to", 12)) == 9:
+            cfg["m_from"], cfg["m_to"] = 1, 12   # النطاق القديم كان مارس–سبتمبر، والافتراضي الآن السنة كاملة
         ss["sv_cfg"] = cfg
     return [ss[k] for k in ("sv_bon", "sv_not", "sv_mov", "sv_set", "sv_wo", "sv_prd", "sv_ipr", "sv_cpr", "sv_pay", "sv_map")] + [ss["sv_cfg"]]
 
@@ -767,7 +769,12 @@ def _productivity(prd, bon, mov, pay, ipr, cpr, mp, cfg, site, build):
     if not len(P) and not len(B):
         _onboard("إنتاجية الموقع تحتاج: تقرير إنتاجية الموقع + تقارير البونص + الرواتب.")
         return
-    m1, m2 = int(cfg.get("m_from", 1)), int(cfg.get("m_to", 12))
+    pc1, pc2, pc3 = st.columns([1, 1, 3])
+    m1 = int(pc1.number_input("من الشهر", 1, 12, int(cfg.get("m_from", 1)), key="sv_pm1"))
+    m2 = int(pc2.number_input("إلى الشهر", 1, 12, int(cfg.get("m_to", 12)), key="sv_pm2"))
+    if m2 < m1:
+        m1, m2 = m2, m1
+    pc3.caption("الأشهر بلا بيانات تظهر بشرطة حتى تُرفع تقاريرها.")
     c_team = next((c for c in P.columns if "تنفيذ فرق الشركة" in c and "اسناد" in c), None) if len(P) else None
     c_sub = next((c for c in P.columns if "الباطن" in c), None) if len(P) else None
     c_tot = next((c for c in P.columns if "أجمالي التنفيذ" in c or "إجمالي التنفيذ" in c), None) if len(P) else None
