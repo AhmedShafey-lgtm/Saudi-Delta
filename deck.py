@@ -226,7 +226,8 @@ def facts(ctx, cv):
     F["comp"] = sum(float(v.get("total_comp", 0)) for v in P.values())
     F["adm_pay"] = sum(float(v.get("admin_cost", 0)) for v in P.values())
     # الكادر الإداري لكل موقع (مركز تكلفة)
-    ACT_AR = {"construction": "إنشاءات وتعزيزات", "maintenance": "صيانة", "readers": "قراء عدادات", "admin": "الإدارة"}
+    ACT_AR = {"construction": "إنشاءات وتعزيزات", "maintenance": "صيانة وقراء العدادات",
+              "readers": "صيانة وقراء العدادات", "admin": "الإدارة"}
     rows = []
     for site, d in cv._db.items():
         if site == cv.ADMIN_SITE:          # الإدارة ومصنع الأعمدة مركز مركزي بلا إيراد تشغيلي
@@ -235,6 +236,9 @@ def facts(ctx, cv):
         rv = cv.site_revs(site)[5]
         hc_t = float(p.get("hc_total", 0)); hc_a = float(p.get("hc_admin", 0)); hc_p = float(p.get("hc_prod", 0))
         adm = float(p.get("admin_cost", 0)); comp = float(p.get("total_comp", 0))
+        if cv.activity_of(site) == "readers":
+            # فرق قراء العدادات كلها إنتاجية، ويشرف عليها الطاقم الإداري لمشاريع الصيانة
+            hc_p, hc_a, adm = hc_p + hc_a, 0.0, 0.0
         if hc_t <= 0 and adm <= 0:
             continue
         rows.append({"الموقع": site, "العقد": d.get("contract", ""), "النشاط": ACT_AR.get(cv.activity_of(site), ""),
@@ -611,9 +615,64 @@ def s_summary(F, build):
          f"تاريخ الإصدار {dt.date.today():%Y-%m-%d}")
 
 
+def _adm_block(G, label, note, key):
+    """كتلة مستقلة لكل نوع نشاط: مؤشراته ورسومه وجدوله، فلا تختلط نسب الإنشاءات بالصيانة."""
+    import plotly.graph_objects as go
+    if not len(G):
+        return
+    rv, cost = G["الإيراد"].sum(), G["تكلفة الإدارة"].sum()
+    hc_a, hc_p, comp = G["إداري"].sum(), G["منتج"].sum(), G["تكلفة العمالة"].sum()
+    avg = _div(cost, rv, 100)
+    st.markdown(f'<div class="dk-point" style="border-right-color:#C9A227;background:#FFFBEB;font-weight:700">'
+                f'{label} — {len(G)} مراكز · {hc_a:,.0f} إدارياً · {_m(cost)} مليون ريال · {_p(avg)} من الإيراد</div>',
+                unsafe_allow_html=True)
+    st.caption(note)
+    V = G[G["الإيراد"] > 0].sort_values("إدارة/إيراد", ascending=True)
+    c1, c2 = st.columns([1.15, 1])
+    with c1:
+        col = [RED if v > avg * 1.5 else (GOLD if v > avg else TEAL) for v in V["إدارة/إيراد"]]
+        fig = go.Figure(go.Bar(y=V["الموقع"], x=[round(v, 1) for v in V["إدارة/إيراد"]], orientation="h",
+                               marker_color=col, text=[f"{v:.1f}%" for v in V["إدارة/إيراد"]], textposition="auto"))
+        fig.add_vline(x=round(avg, 1), line_dash="dash", line_color=NAVY,
+                      annotation_text=f"المتوسط {avg:.1f}%", annotation_position="top")
+        fig.update_layout(title="تكلفة الكادر الإداري من إيراد المركز (%)")
+        st.plotly_chart(_fig(fig, max(300, 30 * len(V)), legend=False), use_container_width=True, key=f"dk_adm1_{key}")
+    with c2:
+        W = V.sort_values("منتج لكل إداري", ascending=False)
+        fig2 = go.Figure(go.Bar(y=W["الموقع"], x=[round(v, 1) for v in W["منتج لكل إداري"]], orientation="h",
+                                marker_color=NAVY, text=[f"{v:,.1f}" for v in W["منتج لكل إداري"]], textposition="auto"))
+        fig2.update_layout(title="عدد العمال المنتجين لكل موظف إداري")
+        st.plotly_chart(_fig(fig2, max(300, 30 * len(W)), legend=False), use_container_width=True, key=f"dk_adm2_{key}")
+    D = G.sort_values("تكلفة الإدارة", ascending=False)
+    T = pd.DataFrame({
+        "المركز": D["الموقع"],
+        "العقد": D["العقد"].str.replace("العقد الموحد ", "", regex=False),
+        "العمالة": D["العمالة"].map(lambda v: f"{v:,.0f}"),
+        "إداري": D["إداري"].map(lambda v: f"{v:,.0f}"),
+        "نسبته من العمالة": D["إداري %"].map(_p),
+        "تكلفة الكادر الإداري (م)": D["تكلفة الإدارة"].map(_m),
+        "من تكلفة عمالة المركز": D["إدارة/عمالة"].map(_p),
+        "من إيراد المركز": D["إدارة/إيراد"].map(lambda v: _p(v) if np.isfinite(v) else "—"),
+        "منتج لكل إداري": D["منتج لكل إداري"].map(lambda v: f"{v:,.1f}" if np.isfinite(v) else "—"),
+        "متوسط التكلفة الكاملة للإداري (9 أشهر)": D["كلفة الإداري"].map(lambda v: _n(v) if np.isfinite(v) else "—"),
+    })
+    _tbl(T)
+    Vn = V[V["إداري"] > 0]          # مراكز بلا كادر إداري لا تدخل مقارنة العبء
+    if len(Vn) >= 2:
+        hi, lo = Vn.iloc[-1], Vn.iloc[0]
+        gap = float(sum(max(0.0, r["تكلفة الإدارة"] - r["الإيراد"] * avg / 100.0) for _, r in Vn.iterrows()))
+        point(f"أعلى عبء في <b>{hi['الموقع']}</b> ({_p(hi['إدارة/إيراد'])} وعدد الإداريين فيه {hi['إداري']:,.0f}) "
+              f"وأدناه في <b>{lo['الموقع']}</b> ({_p(lo['إدارة/إيراد'])}). لو بلغت المراكز فوق المتوسط متوسطَ مجموعتها "
+              f"لانخفضت التكلفة {_n(gap)} ريال في تسعة أشهر.",
+              "warn" if hi["إدارة/إيراد"] > 2 * avg else "")
+    nz = V[V["إداري"] <= 0]
+    if len(nz):
+        point("مراكز بلا كادر إداري خاص يشرف عليها طاقم مركز آخر: " +
+              "، ".join(str(x) for x in nz["الموقع"]) + ".", "")
+
+
 def s_admin(F):
     head("الكادر الإداري في المواقع", "عدد الإداريين وتكلفتهم في كل مركز تكلفة · 2026 تسعة أشهر")
-    import plotly.graph_objects as go
     A = F["ADM"]
     if not len(A):
         point("لا توجد بيانات عمالة للمواقع.", "warn")
@@ -622,70 +681,29 @@ def s_admin(F):
     tot_hc, tot_comp, tot_p = A["العمالة"].sum(), A["تكلفة العمالة"].sum(), A["منتج"].sum()
     kpis([("الكادر الإداري", f"{tot_a:,.0f}", f"{_p(_div(tot_a, tot_hc, 100))} من إجمالي العمالة", ""),
           ("تكلفته", _m(tot_c) + " م", f"{_p(_div(tot_c, tot_comp, 100))} من تكلفة العمالة", "gold"),
-          ("من الإيراد", _p(_div(tot_c, tot_rv, 100)), "نسبة تكلفة الإدارة إلى إيراد المواقع", "down" if _div(tot_c, tot_rv, 100) > 10 else "up"),
-          ("منتج لكل إداري", f"{_div(tot_p, tot_a):,.1f}", f"متوسط كلفة الإداري {_n(_div(tot_c, tot_a))} ريال", "")])
-    V = A[A["الإيراد"] > 0].sort_values("إدارة/إيراد", ascending=True)
-    ACOL = {"إنشاءات وتعزيزات": NAVY, "صيانة": TEAL, "قراء عدادات": GOLD}
-    c1, c2 = st.columns([1.15, 1])
-    with c1:
-        avg = _div(tot_c, tot_rv, 100)
-        fig = go.Figure()
-        for act, col in ACOL.items():
-            W = V[V["النشاط"] == act]
-            if not len(W):
-                continue
-            fig.add_bar(y=W["الموقع"], x=[round(v, 1) for v in W["إدارة/إيراد"]], orientation="h", name=act,
-                        marker_color=col, text=[f"{v:.1f}%" for v in W["إدارة/إيراد"]], textposition="auto")
-        fig.add_vline(x=round(avg, 1), line_dash="dash", line_color=RED,
-                      annotation_text=f"متوسط المواقع {avg:.1f}%", annotation_position="top")
-        fig.update_layout(title="تكلفة الكادر الإداري من إيراد الموقع (%)", barmode="relative")
-        st.plotly_chart(_fig(fig, max(380, 26 * len(V))), use_container_width=True)
-    with c2:
-        W = V.sort_values("منتج لكل إداري", ascending=False)
-        fig2 = go.Figure(go.Bar(y=W["الموقع"], x=[round(v, 1) for v in W["منتج لكل إداري"]], orientation="h",
-                                marker_color=NAVY, text=[f"{v:,.1f}" for v in W["منتج لكل إداري"]], textposition="auto"))
-        fig2.update_layout(title="عدد العمال المنتجين لكل موظف إداري")
-        st.plotly_chart(_fig(fig2, max(360, 26 * len(W)), legend=False), use_container_width=True)
-    _ord = {"إنشاءات وتعزيزات": 0, "صيانة": 1, "قراء عدادات": 2}
-    D = A.assign(_o=A["النشاط"].map(_ord).fillna(9)).sort_values(["_o", "تكلفة الإدارة"], ascending=[True, False])
-    T = pd.DataFrame({
-        "الموقع": D["الموقع"],
-        "النشاط": D["النشاط"],
-        "العقد": D["العقد"].str.replace("العقد الموحد ", "", regex=False),
-        "العمالة": D["العمالة"].map(lambda v: f"{v:,.0f}"),
-        "إداري": D["إداري"].map(lambda v: f"{v:,.0f}"),
-        "نسبته من العمالة": D["إداري %"].map(_p),
-        "تكلفة الإدارة (م)": D["تكلفة الإدارة"].map(_m),
-        "من تكلفة العمالة": D["إدارة/عمالة"].map(_p),
-        "من إيراد الموقع": D["إدارة/إيراد"].map(lambda v: _p(v) if np.isfinite(v) else "—"),
-        "منتج لكل إداري": D["منتج لكل إداري"].map(lambda v: f"{v:,.1f}" if np.isfinite(v) else "—"),
-        "كلفة الإداري": D["كلفة الإداري"].map(lambda v: _n(v) if np.isfinite(v) else "—"),
-    })
-    _tbl(T)
-    for act in ("إنشاءات وتعزيزات", "صيانة"):
-        W = V[V["النشاط"] == act]
-        if len(W) < 2:
-            continue
-        a_avg = _div(W["تكلفة الإدارة"].sum(), W["الإيراد"].sum(), 100)
-        hi, lo = W.iloc[-1], W.iloc[0]
-        gap = float(sum(max(0.0, r["تكلفة الإدارة"] - r["الإيراد"] * a_avg / 100.0) for _, r in W.iterrows()))
-        point(f"<b>{act}:</b> متوسط العبء الإداري {_p(a_avg)} من الإيراد. أعلاه <b>{hi['الموقع']}</b> "
-              f"({_p(hi['إدارة/إيراد'])} بـ{hi['إداري']:,.0f} إداريين) وأدناه <b>{lo['الموقع']}</b> ({_p(lo['إدارة/إيراد'])}). "
-              f"لو بلغت المواقع فوق المتوسط متوسطَ نشاطها لانخفضت التكلفة {_n(gap)} ريال في تسعة أشهر.",
-              "warn" if hi["إدارة/إيراد"] > 2 * a_avg else "")
-    con = V[V["النشاط"] == "إنشاءات وتعزيزات"]
-    mnt = V[V["النشاط"] == "صيانة"]
+          ("من الإيراد", _p(_div(tot_c, tot_rv, 100)), "على مستوى كل المواقع", "down" if _div(tot_c, tot_rv, 100) > 10 else "up"),
+          ("منتج لكل إداري", f"{_div(tot_p, tot_a):,.1f}", f"متوسط التكلفة الكاملة للإداري {_n(_div(tot_c, tot_a))} ريال", "")])
+    con = A[A["النشاط"] == "إنشاءات وتعزيزات"]
+    mnt = A[A["النشاط"] == "صيانة وقراء العدادات"]
+    _adm_block(con, "مراكز العقد الموحد (إنشاءات وتعزيزات)",
+               "كل أمر عمل يحتاج مقايسة ومتابعة إسناد ومستخلصاً، فالعبء الإداري فيها أعلى بطبيعته.", "con")
+    st.markdown("")
+    _adm_block(mnt, "مراكز الصيانة وقراء العدادات",
+               "أعمال متكررة بفرق ثابتة بلا دورة إسناد وفوترة لكل أمر، فالإشراف فيها أخف. "
+               "فرق قراء العدادات كلها إنتاجية ويشرف عليها الطاقم الإداري للصيانة.", "mnt")
     if len(con) and len(mnt):
-        point(f"الفارق بين النشاطين بنيوي لا إداري: مواقع الإنشاءات تحمل "
+        point(f"المقارنة بين المجموعتين غير عادلة: الإنشاءات تحمل "
               f"{_p(_div(con['تكلفة الإدارة'].sum(), con['الإيراد'].sum(), 100))} مقابل "
-              f"{_p(_div(mnt['تكلفة الإدارة'].sum(), mnt['الإيراد'].sum(), 100))} في الصيانة، لأن أعمال الإنشاءات "
-              f"تحتاج تنسيقاً ومتابعة إسناد وفوترة لكل أمر عمل. المقارنة العادلة داخل النشاط الواحد.", "")
+              f"{_p(_div(mnt['تكلفة الإدارة'].sum(), mnt['الإيراد'].sum(), 100))} في الصيانة، "
+              f"و{_div(con['منتج'].sum(), con['إداري'].sum()):,.1f} منتج لكل إداري مقابل "
+              f"{_div(mnt['منتج'].sum(), mnt['إداري'].sum()):,.1f}. لذلك يُقارن كل مركز بمجموعته فقط.", "")
     ho = F.get("HO", {})
     if ho.get("cost"):
-        point(f"خارج هذا الجدول: الإدارة العامة ومصنع الأعمدة بهما {ho['hc']:,.0f} موظفاً إدارياً بتكلفة "
+        point(f"خارج الجدولين: الإدارة العامة ومصنع الأعمدة بهما {ho['hc']:,.0f} موظفاً إدارياً بتكلفة "
               f"{_m(ho['cost'])} مليون ريال، وهي مركز مركزي بلا إيراد تشغيلي فلا تدخل المقارنة بين المواقع.", "")
-    foot("الكادر الإداري وتكلفته من ملف الرواتب موزعاً على مراكز التكلفة، والإيراد هو التنفيذ المعتمد لكل مركز في 2026. "
-         "مراكز قراء العدادات انتهى مشروعها خلال الفترة.")
+    foot("عمود «متوسط التكلفة الكاملة للإداري» = تكلفة الكادر الإداري للمركز ÷ عدد الإداريين فيه، وتشمل الراتب "
+         "والبدلات والعمل الإضافي والتأمينات الاجتماعية والطبية والإقامات والتذاكر ومخصصي الإجازة ونهاية الخدمة، "
+         "عن تسعة أشهر لا عن سنة كاملة. الأعداد بالمتوسط المرجح لشهور الخدمة في 2026.")
 
 
 SLIDES = [

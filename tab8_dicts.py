@@ -338,7 +338,7 @@ SITES_DETAILED_DB = {
     "fin_exp": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     "region": "منطقة مكة المكرمة", "contract": "العقد الموحد بمكة المكرمة"
   },
-  "الرياض (إجمالي العقد)": {
+  "الرياض": {
     "rev_shamel": [22570183.72, 27809189.54, 30535984.0, 23273304.37, 18862668.67, 11893717.47],
     "other_rev": [0.0, 178149.0, 15999.0, -11433.35, 809781.0, 0.0],
     "salaries": [5559184.12, 7272833.91, 7715145.04, 8123519.53, 9794598.81, 7879820.3],
@@ -376,7 +376,7 @@ ASSETS_BY_SITE_DB = {
   "ابها": {"total_count": 242, "fully_dep_count": 60, "total_cost": 26747034.0, "equip_cost": 26747034.0, "dep_2026": 2851226.0, "nbv_total": 7166075.0, "nbv_equip": 7166075.0},
   "الادارة (شامل مصنع الأعمدة)": {"total_count": 238, "fully_dep_count": 76, "total_cost": 37710331.0, "equip_cost": 23872769.0, "dep_2026": 2440173.0, "nbv_total": 27601118.0, "nbv_equip": 13763556.0},
   "الباحة": {"total_count": 432, "fully_dep_count": 193, "total_cost": 33858962.0, "equip_cost": 33858962.0, "dep_2026": 2592070.0, "nbv_total": 7082588.0, "nbv_equip": 7082588.0},
-  "الرياض (إجمالي العقد)": {"total_count": 205, "fully_dep_count": 122, "total_cost": 46651277.0, "equip_cost": 26828277.0, "dep_2026": 1377396.0, "nbv_total": 26573569.0, "nbv_equip": 6750569.0},
+  "الرياض": {"total_count": 205, "fully_dep_count": 122, "total_cost": 46651277.0, "equip_cost": 26828277.0, "dep_2026": 1377396.0, "nbv_total": 26573569.0, "nbv_equip": 6750569.0},
   "السراة": {"total_count": 162, "fully_dep_count": 79, "total_cost": 13727958.0, "equip_cost": 13727958.0, "dep_2026": 647728.0, "nbv_total": 1686806.0, "nbv_equip": 1686806.0},
   "القنفذة": {"total_count": 121, "fully_dep_count": 30, "total_cost": 12132058.0, "equip_cost": 12132058.0, "dep_2026": 1078309.0, "nbv_total": 3605901.0, "nbv_equip": 3605901.0},
   "المجاردة": {"total_count": 132, "fully_dep_count": 68, "total_cost": 8957061.0, "equip_cost": 8957061.0, "dep_2026": 365966.0, "nbv_total": 563413.0, "nbv_equip": 563413.0},
@@ -402,7 +402,7 @@ PAYROLL_BY_SITE_26 = {
   "ابها": {"hc_total": 122.9, "hc_saudi": 5.7, "hc_expat": 117.2, "hc_admin": 18.2, "hc_prod": 104.7, "gross_sal": 3292133.0, "overtime": 921.0, "med_gosi": 253114.0, "vac_eosb": 439834.0, "iqama_ticket": 1012800.0, "total_comp": 4997881.0, "admin_cost": 1196058.0, "prod_cost": 3801823.0},
   "الادارة (شامل مصنع الأعمدة)": {"hc_total": 27.3, "hc_saudi": 10.6, "hc_expat": 16.8, "hc_admin": 23.2, "hc_prod": 4.1, "gross_sal": 2445538.0, "overtime": 0.0, "med_gosi": 280676.0, "vac_eosb": 368881.0, "iqama_ticket": 144960.0, "total_comp": 3240055.0, "admin_cost": 3115718.0, "prod_cost": 124337.0},
   "الباحة": {"hc_total": 173.6, "hc_saudi": 18.4, "hc_expat": 155.1, "hc_admin": 31.6, "hc_prod": 142.0, "gross_sal": 5354255.0, "overtime": 143706.0, "med_gosi": 439920.0, "vac_eosb": 717670.0, "iqama_ticket": 1340160.0, "total_comp": 7852005.0, "admin_cost": 2195164.0, "prod_cost": 5656841.0},
-  "الرياض (إجمالي العقد)": {"hc_total": 177.6, "hc_saudi": 16.2, "hc_expat": 161.3, "hc_admin": 27.4, "hc_prod": 150.1, "gross_sal": 5291481.0, "overtime": 7922.0, "med_gosi": 566717.0, "vac_eosb": 715157.0, "iqama_ticket": 1393920.0, "total_comp": 7967275.0, "admin_cost": 1918095.0, "prod_cost": 6049181.0},
+  "الرياض": {"hc_total": 177.6, "hc_saudi": 16.2, "hc_expat": 161.3, "hc_admin": 27.4, "hc_prod": 150.1, "gross_sal": 5291481.0, "overtime": 7922.0, "med_gosi": 566717.0, "vac_eosb": 715157.0, "iqama_ticket": 1393920.0, "total_comp": 7967275.0, "admin_cost": 1918095.0, "prod_cost": 6049181.0},
   "السراة": {"hc_total": 78.4, "hc_saudi": 11.9, "hc_expat": 66.6, "hc_admin": 16.2, "hc_prod": 62.2, "gross_sal": 2290842.0, "overtime": 267.0, "med_gosi": 262620.0, "vac_eosb": 343183.0, "iqama_ticket": 575040.0, "total_comp": 3471685.0, "admin_cost": 859887.0, "prod_cost": 2611798.0},
   "القنفذة": {"hc_total": 78.9, "hc_saudi": 1.0, "hc_expat": 77.9, "hc_admin": 7.4, "hc_prod": 71.4, "gross_sal": 1869008.0, "overtime": 0.0, "med_gosi": 133872.0, "vac_eosb": 257181.0, "iqama_ticket": 672960.0, "total_comp": 2933021.0, "admin_cost": 460554.0, "prod_cost": 2472467.0},
   "المجاردة": {"hc_total": 73.1, "hc_saudi": 10.0, "hc_expat": 63.1, "hc_admin": 15.1, "hc_prod": 58.0, "gross_sal": 2098915.0, "overtime": 0.0, "med_gosi": 192276.0, "vac_eosb": 294924.0, "iqama_ticket": 545280.0, "total_comp": 3131395.0, "admin_cost": 815066.0, "prod_cost": 2316329.0},
@@ -463,7 +463,7 @@ MAKKAH_OPS_DB = {
 # المتبقي غير منفذ = افتتاحي + إسناد جديد − (التنفيذ الكلي − عقد بنسبة %)
 # ==========================================================
 ASSIGN_2026_BY_SITE = {
-  "الرياض (إجمالي العقد)": {"open_unexec": 5772120.0, "new_wo": 18435195.78, "new_emerg": 3233799.42, "team_wo": 4606004.66, "team_partial": 4105000.0, "team_emerg": 3233799.42, "sub_works": 5977695.08, "sub_pct_contract": 0.0, "total_exec": 17922499.16, "open_exec_unbilled": 26917781.0, "open_partial": 0.0, "partial_2026": 4105000.0, "billed": 11901878.29, "avail_billing": 28833401.869999997, "remaining_unexec": 9518616.040000005, "contract": "العقد الموحد بالرياض"},
+  "الرياض": {"open_unexec": 5772120.0, "new_wo": 18435195.78, "new_emerg": 3233799.42, "team_wo": 4606004.66, "team_partial": 4105000.0, "team_emerg": 3233799.42, "sub_works": 5977695.08, "sub_pct_contract": 0.0, "total_exec": 17922499.16, "open_exec_unbilled": 26917781.0, "open_partial": 0.0, "partial_2026": 4105000.0, "billed": 11901878.29, "avail_billing": 28833401.869999997, "remaining_unexec": 9518616.040000005, "contract": "العقد الموحد بالرياض"},
   "تبوك": {"open_unexec": 462712.52, "new_wo": 2792603.0, "new_emerg": 2518097.0, "team_wo": 2338294.0, "team_partial": 238123.0, "team_emerg": 2518097.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 5094514.0, "open_exec_unbilled": 2558567.0, "open_partial": 0.0, "partial_2026": 238123.0, "billed": 3590734.0, "avail_billing": 3824224.0, "remaining_unexec": 678898.5199999996, "contract": "العقد الموحد بتبوك"},
   "قراء عدادات تبوك": {"open_unexec": 0.0, "new_wo": 2371283.0, "new_emerg": 0.0, "team_wo": 2371283.0, "team_partial": 0.0, "team_emerg": 0.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 2371283.0, "open_exec_unbilled": 0.0, "open_partial": 0.0, "partial_2026": 0.0, "billed": 1224628.0, "avail_billing": 1146655.0, "remaining_unexec": 0.0, "contract": "العقد الموحد بتبوك"},
   "ضباء": {"open_unexec": 2331150.98, "new_wo": 1539165.0, "new_emerg": 1656700.0, "team_wo": 2254351.0, "team_partial": 1591650.0, "team_emerg": 1656700.0, "sub_works": 0.0, "sub_pct_contract": 0.0, "total_exec": 5502701.0, "open_exec_unbilled": 1335428.0, "open_partial": 0.0, "partial_2026": 1591650.0, "billed": 3650142.0, "avail_billing": 1596337.0, "remaining_unexec": 24314.980000000447, "contract": "العقد الموحد بتبوك"},

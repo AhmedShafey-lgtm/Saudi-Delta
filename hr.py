@@ -54,6 +54,15 @@ def _sub(text, tag="", tone="na"):
     st.markdown(f'<div class="hr-sub">{t}{text}</div>', unsafe_allow_html=True)
 
 
+def save_roles(df):
+    """يحفظ أدوار الموظفين المعدّلة يدوياً (ما خالف الافتراضي فقط)."""
+    st.session_state["hr_role"] = df.reset_index(drop=True)
+    try:
+        df.to_csv(ROLE_FILE, index=False)
+    except Exception:
+        pass
+
+
 def _box(key):
     """حاوية بمفتاح لتطبيق التنسيق، مع بديل للإصدارات التي لا تدعم المفتاح."""
     try:
@@ -73,6 +82,13 @@ def _kpis(items):
     st.markdown(h + "</div>", unsafe_allow_html=True)
 
 GROUPS = ["مهندسون", "محاسبون", "فنيون", "عمالة", "إداريون ومهن أخرى"]
+ROLE_FILE = os.path.join(HERE, "hr_roles.csv")
+ROLE_COLS = ["الرقم الوظيفي", "الدور الوظيفي"]
+ADMIN_ROLE, PROD_ROLE = "إداري", "إنتاجي"
+ROLES = [ADMIN_ROLE, PROD_ROLE]
+# الدور الافتراضي لكل مجموعة مهنية، ويُعدَّل لأي موظف على حدة من «تعديل الدور الوظيفي»
+DEFAULT_ROLE_BY_GROUP = {"مهندسون": PROD_ROLE, "محاسبون": ADMIN_ROLE, "فنيون": PROD_ROLE,
+                         "عمالة": PROD_ROLE, "إداريون ومهن أخرى": ADMIN_ROLE}
 # قواعد تصنيف المهنة إلى مجموعة رئيسية (أول قاعدة تنطبق)
 DEFAULT_PROF_RULES = [
     ["مهندس", "مهندسون"],
@@ -95,7 +111,7 @@ PORTAL_REF = [
     ["مهن المشتريات", 70, "ملتزمة"], ["المهن الفنية الهندسية", 30, "ملتزمة"], ["مهن خدمة العملاء", 100, "ملتزمة"],
 ]
 BANDS = ["غير محدد", "بلاتيني", "أخضر مرتفع", "أخضر متوسط", "أخضر منخفض", "أصفر", "أحمر"]
-DEFAULT_SET = {"req": DEFAULT_REQ, "band": "غير محدد", "gosi_saudi": 402, "gosi_foreign": 1727, "gosi_date": "13/10/2026",
+DEFAULT_SET = {"role_by_group": DEFAULT_ROLE_BY_GROUP, "req": DEFAULT_REQ, "band": "غير محدد", "gosi_saudi": 402, "gosi_foreign": 1727, "gosi_date": "13/10/2026",
                "leave_days_lt5": 21, "leave_days_ge5": 30, "prof_rules": DEFAULT_PROF_RULES}
 ACT_DEFAULTS = {"val_date": "2026-12-31", "dr": 5.30, "dr_open": 5.30, "si": 2.0, "open_net": 16099000.0, "open_adv": 16387297.0, "extra_pay": 0.0}
 ACTIVE = ["يعمل", "نشط"]
@@ -425,6 +441,11 @@ def _state():
     if "hr_pay" not in ss:
         p = _read_csv(PAY_FILE, dtype={"الرقم الوظيفي": str})
         ss["hr_pay"] = p if p is not None else pd.DataFrame(columns=PAY_COLS)
+    if "hr_role" not in ss:
+        x = _read_csv(ROLE_FILE, dtype={"الرقم الوظيفي": str})
+        if x is not None and "الدور الوظيفي" in x.columns:
+            x = x[x["الدور الوظيفي"].isin(ROLES)].drop_duplicates("الرقم الوظيفي", keep="last")
+        ss["hr_role"] = x if x is not None else pd.DataFrame(columns=ROLE_COLS)
     if "hr_eosb" not in ss:
         x = _read_csv(EOSB_FILE, dtype={"الكود": str})
         ss["hr_eosb"] = x if x is not None else pd.DataFrame(columns=EOSB_COLS)
@@ -499,6 +520,13 @@ def build_view(emp, pay, sett, cf, sal=None):
         for c in ["الراتب الأساسي", "إجمالي الراتب", "مبلغ آخر زيادة"]:
             E[c] = np.nan
         E["تاريخ آخر زيادة"] = None
+    rmap = sett.get("role_by_group", DEFAULT_ROLE_BY_GROUP)
+    E["الدور الوظيفي"] = E["المجموعة"].map(lambda g: rmap.get(g, PROD_ROLE)).fillna(PROD_ROLE)
+    ov = st.session_state.get("hr_role")
+    if ov is not None and len(ov):
+        m = ov.drop_duplicates("الرقم الوظيفي", keep="last").set_index("الرقم الوظيفي")["الدور الوظيفي"]
+        v = E["الرقم الوظيفي"].map(m)
+        E["الدور الوظيفي"] = np.where(v.notna(), v, E["الدور الوظيفي"])
     E["الفئة"] = ""
     if sal is not None and len(sal):
         S_ = sal.drop_duplicates("الرقم الوظيفي", keep="last").set_index("الرقم الوظيفي")
@@ -550,6 +578,7 @@ def render_hr(ctx, build_styled_table):
     import cashflow as cf
     st.markdown(CSS, unsafe_allow_html=True)
     unlocked = bool(ctx.get("UP_UNLOCKED", False))
+    st.session_state["hr_unlocked"] = unlocked
     emp, pay, inc, sett = _state()
     st.subheader("👷 الموارد البشرية")
     fbar = st.container()
@@ -566,13 +595,18 @@ def render_hr(ctx, build_styled_table):
     V = build_view(emp, pay, sett, cf, st.session_state.get("hr_sal"))
     A_full = V[V["نشط"]].copy()
     with fbar:
-        psel = st.multiselect("🔎 المهنة (فلتر ثابت يُطبَّق على كل أقسام الموارد البشرية عدا الاكتواري)", sorted(A_full["المهنة"].dropna().unique().tolist()),
-                              key="hr_g_prof", placeholder="كل المهن")
+        fc1, fc2 = st.columns([3, 2])
+        psel = fc1.multiselect("🔎 المهنة (فلتر ثابت يُطبَّق على كل أقسام الموارد البشرية عدا الاكتواري)",
+                               sorted(A_full["المهنة"].dropna().unique().tolist()),
+                               key="hr_g_prof", placeholder="كل المهن")
+        rsel = fc2.radio("👔 الدور الوظيفي", ["الكل"] + ROLES, horizontal=True, key="hr_g_role")
         if not len(pay):
             st.warning("لا توجد تفاصيل رواتب محمّلة حالياً، لذا تظهر الرواتب والتأمينات والإقامات صفراً. أعد رفع ملف تفاصيل الرواتب الشهرية من «البيانات والإعدادات» "
                        "(الملفات المحفوظة قد تضيع عند إعادة تشغيل الاستضافة).")
     if psel:
         V = V[V["المهنة"].isin(psel)].copy()
+    if rsel != "الكل":
+        V = V[V["الدور الوظيفي"] == rsel].copy()
     A = V[V["نشط"]].copy()
     ym = good_month(pay)
     with t_sum:
@@ -580,7 +614,7 @@ def render_hr(ctx, build_styled_table):
     with t_emp:
         _browse(V)
     with t_inc:
-        _increases(A, unlocked, ym)
+        _increases(A, unlocked, ym, build_styled_table)
     with t_prov:
         _provisions(A, sett, build_styled_table)
     with t_act:
@@ -691,6 +725,7 @@ BK_FILES = {  # اسم داخل الأرشيف ← (مسار الملف على �
     "hr/data/leave_saudi.csv": (LSA_FILE, "hr_lsa", False),
     "hr/data/leave_program.csv": (LPR_FILE, "hr_lpr", False),
     "hr/data/salary_snapshot.csv": (SAL_FILE, "hr_sal", False),
+    "hr/roles.csv": (ROLE_FILE, "hr_role", True),
     # التدفقات النقدية: التعديلات اليدوية على تصنيف السطور
     "cashflow/overrides.csv": (os.path.join(HERE, "cashflow_overrides.csv"), "cf_ovr", True),
     "cashflow/contractors.csv": (os.path.join(HERE, "cashflow_subs.csv"), "cf_subs", True),
@@ -833,6 +868,35 @@ def _summary(A, pay, sett, ym, build):
     st.caption(f"الجنسية تُستنتج من رقم الهوية/الإقامة (يبدأ بـ1 سعودي و2 أجنبي)، وعند غيابه من وجود رسم إقامة في الرواتب؛ غير المحدد: {un}. "
                f"للمطابقة: شهادة التأمينات {sett['gosi_date']}: سعوديون {sett['gosi_saudi']:,} وأجانب {sett['gosi_foreign']:,} "
                f"(مقابل {sa:,} و{fo:,} في ملف الموظفين).")
+    if "الدور الوظيفي" in A.columns:
+        _title("الطاقم الإداري والإنتاجي")
+        R = A.copy()
+        R["راتب"] = R["إجمالي الراتب"].fillna(0)
+        n_adm = int((R["الدور الوظيفي"] == ADMIN_ROLE).sum())
+        c_adm = float(R.loc[R["الدور الوظيفي"] == ADMIN_ROLE, "راتب"].sum())
+        c_all = float(R["راتب"].sum())
+        _kpis([("الطاقم الإداري", f"{n_adm:,}", f"{_pct(n_adm, len(R))} من العاملين"),
+               ("رواتبه الشهرية", _fmt(c_adm), f"{_pct(c_adm, c_all)} من الرواتب", "gold"),
+               ("الطاقم الإنتاجي", f"{len(R) - n_adm:,}", f"{_pct(len(R) - n_adm, len(R))} من العاملين", "ok"),
+               ("منتج لكل إداري", f"{((len(R) - n_adm) / n_adm):,.1f}" if n_adm else "—", "كثافة الإشراف")])
+        G2 = R.groupby(["العقد", "الدور الوظيفي"]).agg(n=("الاسم", "size"), s=("راتب", "sum")).reset_index()
+        rows = []
+        for ctr in sorted(G2["العقد"].unique()):
+            g_ = G2[G2["العقد"] == ctr]
+            na = int(g_.loc[g_["الدور الوظيفي"] == ADMIN_ROLE, "n"].sum())
+            sa_ = float(g_.loc[g_["الدور الوظيفي"] == ADMIN_ROLE, "s"].sum())
+            np_ = int(g_.loc[g_["الدور الوظيفي"] == PROD_ROLE, "n"].sum())
+            sp_ = float(g_.loc[g_["الدور الوظيفي"] == PROD_ROLE, "s"].sum())
+            rows.append(("item", ctr, [str(na), _fmt(sa_), str(np_), _fmt(sp_),
+                                       _pct(na, na + np_), f"{(np_ / na):,.1f}" if na else "—"]))
+        ta = int((R["الدور الوظيفي"] == ADMIN_ROLE).sum()); tp = len(R) - ta
+        sa_t = c_adm; sp_t = c_all - c_adm
+        rows.append(("total", "الإجمالي", [str(ta), _fmt(sa_t), str(tp), _fmt(sp_t),
+                                           _pct(ta, len(R)), f"{(tp / ta):,.1f}" if ta else "—"]))
+        st.table(build(rows, ["العقد", "عدد الإداريين", "رواتب الإداريين", "عدد المنتجين", "رواتب المنتجين",
+                              "نسبة الإداريين", "منتج لكل إداري"]))
+        st.caption("الدور الافتراضي من المجموعة المهنية، ويُعدَّل لأي موظف من «تعديل الدور الوظيفي» في استعراض العاملين. "
+                   "فرق قراء العدادات كلها إنتاجية ويشرف عليها الطاقم الإداري لمشاريع الصيانة.")
     for g in GROUPS:
         G = A[A["المجموعة"] == g]
         if not len(G):
@@ -864,14 +928,56 @@ def _summary(A, pay, sett, ym, build):
             st.table(build(rows, ["الفئة", "على رأس العمل", "في إجازة", "نسبة الإجازة"]))
 
 
+def _role_editor(D, unlocked=True):
+    """تعديل الدور الوظيفي: مربع تأشير «إداري» لكل موظف، وما يُحفظ هو ما خالف الافتراضي."""
+    n_a = int((D["الدور الوظيفي"] == ADMIN_ROLE).sum())
+    with st.expander(f"👔 تعديل الدور الوظيفي ({n_a:,} إداري من {len(D):,} في العرض الحالي)"):
+        st.caption("الدور الافتراضي يأتي من المجموعة المهنية. أشّر على «إداري» لنقل الموظف إلى الطاقم الإداري، "
+                   "وأزل التأشير لإعادته إلى الطاقم الإنتاجي، ثم احفظ. التعديلات تدخل كل تقارير العمالة والعلاوات والمخصصات.")
+        if not unlocked:
+            st.caption("🔒 للتعديل أدخل كلمة السر في الشريط الجانبي.")
+            return
+        E = pd.DataFrame({
+            "إداري": D["الدور الوظيفي"].eq(ADMIN_ROLE).values,
+            "الاسم": D["الاسم"].values, "الرقم الوظيفي": D["الرقم الوظيفي"].values,
+            "المهنة": D["المهنة"].values, "المجموعة": D["المجموعة"].values,
+            "الموقع": D["الموقع"].values, "العقد": D["العقد"].values,
+        })
+        if not len(E):
+            st.caption("لا يوجد موظفون في العرض الحالي.")
+            return
+        ed = st.data_editor(E, hide_index=True, use_container_width=True, height=min(430, 48 + 35 * len(E)),
+                            key="hr_role_ed",
+                            column_config={"إداري": st.column_config.CheckboxColumn("إداري", width="small"),
+                                           "الاسم": st.column_config.TextColumn(disabled=True, width="medium"),
+                                           "الرقم الوظيفي": st.column_config.TextColumn(disabled=True),
+                                           "المهنة": st.column_config.TextColumn(disabled=True),
+                                           "المجموعة": st.column_config.TextColumn(disabled=True),
+                                           "الموقع": st.column_config.TextColumn(disabled=True),
+                                           "العقد": st.column_config.TextColumn(disabled=True)})
+        c1, c2 = st.columns([1, 3])
+        if c1.button("💾 حفظ الأدوار", key="hr_role_save"):
+            new = pd.DataFrame({"الرقم الوظيفي": ed["الرقم الوظيفي"].astype(str),
+                                "الدور الوظيفي": np.where(ed["إداري"].fillna(False).astype(bool), ADMIN_ROLE, PROD_ROLE)})
+            cur = st.session_state.get("hr_role", pd.DataFrame(columns=ROLE_COLS))
+            cur = cur[~cur["الرقم الوظيفي"].astype(str).isin(set(new["الرقم الوظيفي"]))] if len(cur) else cur
+            out = pd.concat([cur, new], ignore_index=True).drop_duplicates("الرقم الوظيفي", keep="last")
+            save_roles(out)
+            st.success(f"تم حفظ أدوار {len(new):,} موظفاً ({int((new['الدور الوظيفي'] == ADMIN_ROLE).sum()):,} إداري).")
+            st.rerun()
+        n_ov = len(st.session_state.get("hr_role", []))
+        c2.caption(f"عدد الأدوار المحفوظة يدوياً: {n_ov:,}. استخدم فلتر المهنة أو البحث أعلاه لتضييق القائمة قبل التعديل.")
+
+
 def _browse(V):
     _title("استعراض العاملين بالشركة")
     st.markdown('<div class="hr-note">سيُضاف لاحقاً تقرير الاسترجاع الذي ستُرفقه ببياناته المطلوبة؛ الجدول الحالي من ملف الموظفين والرواتب.</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
-    by = c1.selectbox("الاستعراض حسب", ["المهنة", "الجنسية", "المجموعة الرئيسية", "العقد"], key="hr_by")
+    by = c1.selectbox("الاستعراض حسب", ["المهنة", "الجنسية", "المجموعة الرئيسية", "العقد", "الدور الوظيفي"], key="hr_by")
     stat = c4.multiselect("الموقف", ["على رأس العمل", "في إجازة", "مستقيل"], default=["على رأس العمل", "في إجازة"], key="hr_stat")
     D = V[V["الموقف"].isin(stat)] if stat else V
-    col = {"المهنة": "المهنة", "الجنسية": "الجنسية", "المجموعة الرئيسية": "المجموعة", "العقد": "العقد"}[by]
+    col = {"المهنة": "المهنة", "الجنسية": "الجنسية", "المجموعة الرئيسية": "المجموعة", "العقد": "العقد",
+           "الدور الوظيفي": "الدور الوظيفي"}[by]
     G = D.groupby(col).agg(**{"العدد": ("الاسم", "size"), "سعوديون": ("الجنسية", lambda s: int((s == "سعودي").sum())),
                               "أجانب": ("الجنسية", lambda s: int((s == "أجنبي").sum())), "إجمالي الرواتب": ("إجمالي الراتب", "sum")})
     G = G.sort_values("العدد", ascending=False)
@@ -886,28 +992,50 @@ def _browse(V):
         D = D[D[col] == val]
     if q:
         D = D[D["الاسم"].str.contains(re.escape(q), case=False, regex=True)]
-    T = D[["الاسم", "الرقم الوظيفي", "المهنة", "المجموعة", "الجنسية", "العقد", "الموقع", "الموقف", "تاريخ التعيين", "نهاية العقد", "اخر اجازة", "الراتب الأساسي", "إجمالي الراتب"]].copy()
+    T = D[["الاسم", "الرقم الوظيفي", "المهنة", "الدور الوظيفي", "المجموعة", "الجنسية", "العقد", "الموقع", "الموقف", "تاريخ التعيين", "نهاية العقد", "اخر اجازة", "الراتب الأساسي", "إجمالي الراتب"]].copy()
     for c in ["تاريخ التعيين", "نهاية العقد", "اخر اجازة"]:
         T[c] = T[c].dt.strftime("%Y-%m-%d")
     st.caption(f"{len(T):,} موظفاً")
     T = T[list(T.columns[::-1])]
     with _box("hr_grid_emp"):
         st.dataframe(T.style.format({"الراتب الأساسي": "{:,.0f}", "إجمالي الراتب": "{:,.0f}"}), hide_index=True, use_container_width=True, height=480)
+    _role_editor(D, bool(st.session_state.get("hr_unlocked", False)))
     st.download_button("⬇️ تنزيل القائمة (CSV)", data=D.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"), file_name="hr_employees.csv", mime="text/csv", key="hr_dl")
 
 
 def _impact(D, d, sett, today):
-    """أثر الزيادة الشهرية d (Series بنفس فهرس D): نقدي 12 شهراً، مخصص الإجازة، مخصص نهاية الخدمة (من التعيين حتى نهاية العقد)."""
-    yrs = ((today - D["تاريخ التعيين"]).dt.days / 365.25).fillna(0)
+    """أثر الزيادة الشهرية d مفصولاً إلى:
+    (أ) أثر على الرصيد السابق: ارتفاع المخصص المتراكم حتى اليوم لأن المخصص يُحسب على آخر راتب (لمرة واحدة).
+    (ب) أثر 12 شهراً القادمة: النقدي على الرواتب، وما يتراكم من إجازة ونهاية خدمة خلال السنة القادمة.
+    (ج) أثر ما بعد 12 شهراً حتى نهاية العقد: الباقي من أثر نهاية الخدمة."""
+    yrs = ((today - D["تاريخ التعيين"]).dt.days / 365.25).clip(lower=0).fillna(0)
     ann = np.where(yrs >= 5, sett["leave_days_ge5"], sett["leave_days_lt5"])
     end = D["نهاية العقد"].fillna(today)
     T_ = ((end - D["تاريخ التعيين"]).dt.days / 365.25).clip(lower=0).fillna(0)
+    yrs12 = np.minimum(yrs + 1.0, T_.where(T_ > 0, yrs + 1.0))
+    f_now = yrs.map(eosb_factor)
+    f_12 = pd.Series(yrs12, index=D.index).map(eosb_factor)
+    f_end = T_.map(eosb_factor)
+    # أيام الإجازة المتراكمة حتى اليوم من تاريخ آخر إجازة
+    mo = ((today - D["اخر اجازة"]).dt.days / 30.44).clip(lower=0).fillna(0)
+    days_now = (mo / 12.0 * ann)
     out = pd.DataFrame(index=D.index)
-    out["أثر نقدي 12 شهراً"] = d * 12
-    out["أثر على مخصص الإجازة"] = d / 30 * ann
-    out["أثر على مخصص نهاية الخدمة"] = d * T_.map(eosb_factor)
+    out["الزيادة الشهرية"] = d
+    out["الرواتب: 12 شهراً"] = d * 12
+    out["الإجازة: الرصيد السابق"] = d / 30 * days_now
+    out["الإجازة: 12 شهراً"] = d / 30 * ann
+    out["نهاية الخدمة: الرصيد السابق"] = d * f_now
+    out["نهاية الخدمة: 12 شهراً"] = d * (f_12 - f_now).clip(lower=0)
+    out["نهاية الخدمة: ما بعد 12 شهراً حتى نهاية العقد"] = d * (f_end - f_12).clip(lower=0)
+    out["أثر الرصيد السابق (لمرة واحدة)"] = out["الإجازة: الرصيد السابق"] + out["نهاية الخدمة: الرصيد السابق"]
+    out["أثر 12 شهراً القادمة"] = out["الرواتب: 12 شهراً"] + out["الإجازة: 12 شهراً"] + out["نهاية الخدمة: 12 شهراً"]
+    out["إجمالي أثر 12 شهراً مع الرصيد السابق"] = out["أثر الرصيد السابق (لمرة واحدة)"] + out["أثر 12 شهراً القادمة"]
+    # أسماء سابقة يعتمد عليها باقي التقرير
+    out["أثر نقدي 12 شهراً"] = out["الرواتب: 12 شهراً"]
+    out["أثر على مخصص الإجازة"] = out["الإجازة: الرصيد السابق"] + out["الإجازة: 12 شهراً"]
+    out["أثر على مخصص نهاية الخدمة"] = out["نهاية الخدمة: الرصيد السابق"] + out["نهاية الخدمة: 12 شهراً"]
     out["إجمالي الأثر على المخصصات"] = out["أثر على مخصص الإجازة"] + out["أثر على مخصص نهاية الخدمة"]
-    out["إجمالي الأثر"] = out["أثر نقدي 12 شهراً"] + out["إجمالي الأثر على المخصصات"]
+    out["إجمالي الأثر"] = out["إجمالي أثر 12 شهراً مع الرصيد السابق"]
     return out, ann
 
 
@@ -919,11 +1047,14 @@ def _save_inc(df):
         pass
 
 
-def _increases(A, unlocked, ym):
+def _increases(A, unlocked, ym, build):
     _title("تقرير العلاوات")
-    st.markdown('<div class="hr-note">يحفظ العلاوات المعتمدة ويحسب أثرها: نقدياً لمدة 12 شهراً، وعلى مخصص الإجازة (دورة 12 شهراً من تاريخ آخر إجازة)، وعلى مخصص نهاية الخدمة '
-                '(من تاريخ التعيين حتى نهاية العقد: نصف شهر عن كل سنة من الخمس الأولى وشهر عن كل سنة بعدها). '
-                'تاريخ ومبلغ آخر زيادة يُستخرجان من تغيّر الراتب الأساسي في تفاصيل الرواتب الشهرية المرفوعة (يناير 2025 فما بعد).</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hr-note">يحفظ العلاوات المعتمدة ويعرض أثرها برقمين لكل بند: '
+                '<b>أثر على الرصيد السابق</b> يحدث مرة واحدة، لأن مخصص الإجازة ونهاية الخدمة يُحسبان على آخر راتب، '
+                'فترفع الزيادة قيمة ما تراكم من سنوات الخدمة والإجازات السابقة. '
+                'و<b>أثر 12 شهراً القادمة</b> وهو ما يُضاف خلال السنة: الرواتب نقداً، وما يتراكم من إجازة ونهاية خدمة في سنة واحدة. '
+                'تاريخ ومبلغ آخر زيادة يُستخرجان من تغيّر الراتب الأساسي في تفاصيل الرواتب الشهرية المرفوعة (يناير 2025 فما بعد).</div>',
+                unsafe_allow_html=True)
     sett = st.session_state["hr_set"]
     today = pd.Timestamp(dt.date.today())
     # ---- زيادات مقترحة من ملف
@@ -959,18 +1090,26 @@ def _increases(A, unlocked, ym):
     imp_all, _ = _impact(A, A["الزيادة المعتمدة"], sett, today)
     # ---- أثر على مستوى الشركة والعقود
     Gc = pd.concat([A[["العقد", "الزيادة المعتمدة"]], imp_all], axis=1)
-    G = Gc.groupby("العقد").agg(**{"المستفيدون": ("الزيادة المعتمدة", lambda x: int((x > 0).sum())), "الزيادة الشهرية": ("الزيادة المعتمدة", "sum"),
-                                  "أثر نقدي 12 شهراً": ("أثر نقدي 12 شهراً", "sum"), "أثر المخصصات": ("إجمالي الأثر على المخصصات", "sum"), "إجمالي الأثر": ("إجمالي الأثر", "sum")})
-    G = G.sort_values("إجمالي الأثر", ascending=False)
+    G = Gc.groupby("العقد").agg(**{
+        "المستفيدون": ("الزيادة المعتمدة", lambda x: int((x > 0).sum())), "الزيادة الشهرية": ("الزيادة المعتمدة", "sum"),
+        "الرواتب 12 شهراً": ("الرواتب: 12 شهراً", "sum"),
+        "الإجازة: رصيد سابق": ("الإجازة: الرصيد السابق", "sum"), "الإجازة: 12 شهراً": ("الإجازة: 12 شهراً", "sum"),
+        "نهاية الخدمة: رصيد سابق": ("نهاية الخدمة: الرصيد السابق", "sum"), "نهاية الخدمة: 12 شهراً": ("نهاية الخدمة: 12 شهراً", "sum"),
+        "أثر الرصيد السابق": ("أثر الرصيد السابق (لمرة واحدة)", "sum"), "أثر 12 شهراً": ("أثر 12 شهراً القادمة", "sum"),
+        "الإجمالي": ("إجمالي الأثر", "sum")})
+    G = G.sort_values("الإجمالي", ascending=False)
     G.loc["الإجمالي (الشركة)"] = G.sum()
     Gt = G.reset_index()
     Gt = Gt[list(Gt.columns[1:][::-1]) + [Gt.columns[0]]]
     st.markdown("**الأثر على مستوى العقد / الشركة**")
+    st.caption("لكل بند رقمان: أثر على الرصيد السابق يحدث مرة واحدة لأن المخصص يُحسب على آخر راتب فيرتفع المتراكم من سنوات الخدمة السابقة، "
+               "وأثر 12 شهراً القادمة وهو ما يُضاف خلال السنة القادمة. الرواتب نقدية، والإجازة ونهاية الخدمة مخصصات غير نقدية حتى تُصرف.")
     with _box("hr_grid_incg"):
         st.dataframe(Gt.style.format({c: "{:,.0f}" for c in Gt.columns if c != "العقد"}), hide_index=True, use_container_width=True, height=min(380, 38 + 35 * len(Gt)))
     # ---- تفصيل الموظفين
     st.markdown("**تصفية العمالة (تصنيف رئيسي: العقد، ثم تصنيفات فرعية)**")
-    DIMS = {"المهنة": "المهنة", "مركز التكلفة / الموقع": "الموقع", "الجنسية": "الجنسية", "المجموعة الرئيسية": "المجموعة", "الفئة": "الفئة"}
+    DIMS = {"المهنة": "المهنة", "الدور الوظيفي": "الدور الوظيفي", "مركز التكلفة / الموقع": "الموقع",
+            "الجنسية": "الجنسية", "المجموعة الرئيسية": "المجموعة", "الفئة": "الفئة"}
     DIMS = {k: v for k, v in DIMS.items() if v in A.columns and (v != "الفئة" or A["الفئة"].astype(str).str.strip().ne("").any())}
     D = A
     c0, c1, c2, c3, c4 = st.columns([2, 2, 2, 2, 2])
@@ -997,16 +1136,39 @@ def _increases(A, unlocked, ym):
     D = pd.concat([D, imp], axis=1)
     d = D["الزيادة المعتمدة"]
     _kpis([("إجمالي الزيادة الشهرية", _fmt(d.sum()), f"{int((d > 0).sum()):,} موظفاً"),
-           ("الأثر النقدي 12 شهراً", _fmt(D["أثر نقدي 12 شهراً"].sum()), "رواتب سنة كاملة"),
-           ("أثر مخصص الإجازة", _fmt(D["أثر على مخصص الإجازة"].sum()), "غير نقدي"),
-           ("أثر مخصص نهاية الخدمة", _fmt(D["أثر على مخصص نهاية الخدمة"].sum()), "غير نقدي"),
-           ("إجمالي الأثر", _fmt(D["إجمالي الأثر"].sum()), "نقدي وغير نقدي", "gold")])
+           ("أثر الرصيد السابق", _fmt(D["أثر الرصيد السابق (لمرة واحدة)"].sum()), "لمرة واحدة · غير نقدي"),
+           ("أثر 12 شهراً القادمة", _fmt(D["أثر 12 شهراً القادمة"].sum()), "رواتب + مخصصات السنة", "ok"),
+           ("منه نقدي (رواتب)", _fmt(D["الرواتب: 12 شهراً"].sum()), "يُصرف فعلاً خلال السنة"),
+           ("الإجمالي", _fmt(D["إجمالي الأثر"].sum()), "رصيد سابق + 12 شهراً", "gold")])
+    _rows = [
+        ("item", "الرواتب والأجور (نقدي)", ["—", _fmt(D["الرواتب: 12 شهراً"].sum()), _fmt(D["الرواتب: 12 شهراً"].sum())]),
+        ("item", "مخصص الإجازة (غير نقدي)", [_fmt(D["الإجازة: الرصيد السابق"].sum()), _fmt(D["الإجازة: 12 شهراً"].sum()),
+                                             _fmt(D["الإجازة: الرصيد السابق"].sum() + D["الإجازة: 12 شهراً"].sum())]),
+        ("item", "مخصص نهاية الخدمة (غير نقدي)", [_fmt(D["نهاية الخدمة: الرصيد السابق"].sum()), _fmt(D["نهاية الخدمة: 12 شهراً"].sum()),
+                                                  _fmt(D["نهاية الخدمة: الرصيد السابق"].sum() + D["نهاية الخدمة: 12 شهراً"].sum())]),
+        ("total", "الإجمالي", [_fmt(D["أثر الرصيد السابق (لمرة واحدة)"].sum()), _fmt(D["أثر 12 شهراً القادمة"].sum()),
+                               _fmt(D["إجمالي الأثر"].sum())]),
+    ]
+    st.table(build(_rows, ["البند", "أثر على الرصيد السابق (لمرة واحدة)", "أثر 12 شهراً القادمة", "الإجمالي"]))
+    _rest = float(D["نهاية الخدمة: ما بعد 12 شهراً حتى نهاية العقد"].sum())
+    if _rest > 0:
+        st.caption(f"خارج الجدول: أثر الزيادة على نهاية الخدمة لما بعد 12 شهراً وحتى نهاية العقود الحالية {_fmt(_rest)} ريال، "
+                   f"يتراكم تدريجياً في السنوات التالية ولا يُحمَّل على السنة القادمة.")
     D = D.sort_values(["المهنة", "الاسم"]).reset_index(drop=True)
     D["تاريخ التعيين"] = D["تاريخ التعيين"].dt.strftime("%Y-%m-%d")
-    cols = ["الاسم", "المهنة", "تاريخ التعيين", "الراتب الأساسي", "تاريخ آخر زيادة", "مبلغ آخر زيادة", "المدة من آخر إجازة (شهر)", "إجازة مستحقة منذ آخر إجازة (يوم)",
-            "الزيادة المعتمدة", "أثر نقدي 12 شهراً", "أثر على مخصص الإجازة", "أثر على مخصص نهاية الخدمة", "إجمالي الأثر"]
+    cols = ["الاسم", "المهنة", "الدور الوظيفي", "تاريخ التعيين", "الراتب الأساسي", "تاريخ آخر زيادة", "مبلغ آخر زيادة",
+            "المدة من آخر إجازة (شهر)", "إجازة مستحقة منذ آخر إجازة (يوم)", "الزيادة المعتمدة",
+            "الرواتب: 12 شهراً", "الإجازة: الرصيد السابق", "الإجازة: 12 شهراً",
+            "نهاية الخدمة: الرصيد السابق", "نهاية الخدمة: 12 شهراً",
+            "أثر الرصيد السابق (لمرة واحدة)", "أثر 12 شهراً القادمة", "إجمالي الأثر",
+            "نهاية الخدمة: ما بعد 12 شهراً حتى نهاية العقد"]
+    cols = [c for c in cols if c in D.columns]
     T = D[cols].copy()
-    money = ["الراتب الأساسي", "مبلغ آخر زيادة", "الزيادة المعتمدة", "أثر نقدي 12 شهراً", "أثر على مخصص الإجازة", "أثر على مخصص نهاية الخدمة", "إجمالي الأثر"]
+    money = ["الراتب الأساسي", "مبلغ آخر زيادة", "الزيادة المعتمدة", "الرواتب: 12 شهراً", "الإجازة: الرصيد السابق",
+             "الإجازة: 12 شهراً", "نهاية الخدمة: الرصيد السابق", "نهاية الخدمة: 12 شهراً",
+             "أثر الرصيد السابق (لمرة واحدة)", "أثر 12 شهراً القادمة", "إجمالي الأثر",
+             "نهاية الخدمة: ما بعد 12 شهراً حتى نهاية العقد"]
+    money = [c for c in money if c in T.columns]
     fm = {c: "{:,.0f}" for c in money}
     fm.update({"المدة من آخر إجازة (شهر)": "{:.1f}", "إجازة مستحقة منذ آخر إجازة (يوم)": "{:.1f}"})
     Tr = T[list(T.columns[::-1])]
@@ -1084,8 +1246,10 @@ def _provisions(A, sett, build):
     D["الإجمالي"] = D["مخصص الإجازة"] + D["مخصص نهاية الخدمة"]
     if not len(eo):
         st.warning("كشف دفعات نهاية الخدمة غير محمّل، فالصافي يساوي الإجمالي (الدفعات المسددة صفر). ارفعه من «البيانات والإعدادات».")
-    by = st.radio("التجميع", ["حسب العقد", "حسب المجموعة الرئيسية", "حسب الجنسية"], horizontal=True, key="hr_prov_by")
-    col = {"حسب العقد": "العقد", "حسب المجموعة الرئيسية": "المجموعة", "حسب الجنسية": "الجنسية"}[by]
+    by = st.radio("التجميع", ["حسب العقد", "حسب المجموعة الرئيسية", "حسب الجنسية", "حسب الدور الوظيفي"],
+                  horizontal=True, key="hr_prov_by")
+    col = {"حسب العقد": "العقد", "حسب المجموعة الرئيسية": "المجموعة", "حسب الجنسية": "الجنسية",
+           "حسب الدور الوظيفي": "الدور الوظيفي"}[by]
     G = D.groupby(col).agg(n=("الاسم", "size"), dd=("أيام الإجازة", "sum"), l=("مخصص الإجازة", "sum"), eg=("مخصص نهاية الخدمة (إجمالي)", "sum"), pd_=("الدفعات المسددة", "sum"),
                            e=("مخصص نهاية الخدمة", "sum"), t=("الإجمالي", "sum")).sort_values("t", ascending=False)
     rows = [("item", k, [str(int(r.n)), _fmt(r.dd), _fmt(r.l), _fmt(r.eg), _fmt(r.pd_), _fmt(r.e), _fmt(r.t)]) for k, r in G.iterrows()]
