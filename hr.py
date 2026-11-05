@@ -8,6 +8,8 @@ import openpyxl
 import pandas as pd
 import streamlit as st
 
+import uitable as ut
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 EMP_FILE = os.path.join(HERE, "hr_emp.csv")
 PAY_FILE = os.path.join(HERE, "hr_pay.csv")
@@ -44,52 +46,13 @@ CSS = """
   [class*="st-key-hr_grid"] [data-testid="stDataFrame"] { font-size: 1.02rem !important; }
   [class*="st-key-hr_grid"] [role="columnheader"] { font-weight: 700 !important; font-size: 1.0rem !important; }
   [class*="st-key-hr_grid"] [role="gridcell"] { font-size: 1.0rem !important; }
-  /* جدول عريض: رأس ثابت وعمود أول ثابت مع تمرير أفقي ورأسي */
-  .hw-wrap { direction: rtl; overflow: auto; max-height: 72vh; border: 1px solid #E2E8F0; border-radius: 8px; }
-  .hw { direction: rtl; border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%;
-        font-family: 'Segoe UI', Tahoma, sans-serif; }
-  .hw th, .hw td { text-align: center !important; vertical-align: middle !important; white-space: nowrap;
-                   padding: 9px 12px; border-bottom: 1px solid #EEF2F7; font-size: 1.1rem;
-                   font-variant-numeric: tabular-nums; }
-  .hw thead th { position: sticky; top: 0; z-index: 3; background: #1E3A8A; color: #fff; font-weight: 700;
-                 font-size: 1.0rem; white-space: pre-line; }
-  .hw tbody td.k, .hw thead th.k { position: sticky; right: 0; z-index: 2; text-align: center !important;
-                                   box-shadow: -1px 0 0 0 #CBD5E1 inset; }
-  .hw tbody td.k { background: #F8FAFC; font-size: 1.5rem; font-weight: 600; color: #0B2A6F; }
-  .hw thead th.k { z-index: 4; }
-  .hw tbody tr:nth-child(even) td { background: #FCFDFF; }
-  .hw tbody tr:nth-child(even) td.k { background: #F1F5F9; }
-  .hw tbody tr:hover td { background: #EFF6FF; }
-  .hw td.neg { color: #B91C1C; }
 </style>
 """
 
 
-def _wide(df, key_col, fmts=None, key_id="hw"):
-    """جدول HTML عريض برأس ثابت وعمود أساسي ثابت: الاسم بخط 150% وباقي الخلايا 110%، والكل في منتصف الخلية."""
-    import html as _html
-    cols = [key_col] + [c for c in df.columns if c != key_col]
-    fmts = fmts or {}
-    head = "".join(f'<th class="{"k" if c == key_col else ""}">{_html.escape(str(c))}</th>' for c in cols)
-    body = []
-    for _, r in df.iterrows():
-        tds = []
-        for c in cols:
-            v = r[c]
-            if c in fmts and pd.notna(v) and isinstance(v, (int, float, np.integer, np.floating)):
-                txt = fmts[c].format(v)
-            elif pd.isna(v):
-                txt = "—"
-            else:
-                txt = str(v)
-            cls = "k" if c == key_col else ("neg" if isinstance(v, (int, float, np.integer, np.floating))
-                                            and not isinstance(v, bool) and v < 0 else "")
-            if cls == "neg":
-                txt = f"({txt.lstrip('-')})"
-            tds.append(f'<td class="{cls}">{_html.escape(txt)}</td>')
-        body.append("<tr>" + "".join(tds) + "</tr>")
-    st.markdown(f'<div class="hw-wrap"><table class="hw"><thead><tr>{head}</tr></thead>'
-                f'<tbody>{"".join(body)}</tbody></table></div>', unsafe_allow_html=True)
+def _wide(df, key_col, fmts=None, key_font=1.5, **kw):
+    """جدول عريض موحّد: رأس ثابت وعمود أساسي ثابت على اليمين."""
+    ut.wide(df, key_col, fmts, key_font=key_font, **kw)
 
 
 def _sub(text, tag="", tone="na"):
@@ -621,6 +584,7 @@ def _title(t):
 def render_hr(ctx, build_styled_table):
     import cashflow as cf
     st.markdown(CSS, unsafe_allow_html=True)
+    ut.css()
     unlocked = bool(ctx.get("UP_UNLOCKED", False))
     st.session_state["hr_unlocked"] = unlocked
     emp, pay, inc, sett = _state()
@@ -758,8 +722,7 @@ def _data_tab(unlocked, emp, pay, sett):
             _save_settings(new)
     st.caption("مرجع: نسب التوطين المطلوبة حسب منصة قوى")
     ref = pd.DataFrame(PORTAL_REF, columns=["المجموعة المهنية", "النسبة المطلوبة %", "الالتزام بالتوطين"])
-    with _box("hr_grid_ref"):
-        st.dataframe(ref, hide_index=True, use_container_width=True)
+    _wide(ref, "المجموعة المهنية", key_font=1.15, height="40vh")
     with st.expander("قواعد تصنيف المهنة إلى مجموعة رئيسية (أول قاعدة تنطبق، وما لا ينطبق يُصنَّف عمالة)"):
         rr = pd.DataFrame(sett["prof_rules"], columns=["جزء من المهنة", "المجموعة"])
         r3 = st.data_editor(rr, num_rows="dynamic", use_container_width=True, hide_index=True, disabled=not unlocked, key="hr_rules_ed",
@@ -1047,10 +1010,7 @@ def _browse(V):
     val = c2.selectbox("اختر القيمة", ["الكل"] + list(G.index), key="hr_val")
     q = c3.text_input("بحث بالاسم", key="hr_q").strip()
     Gt = G.reset_index()
-    Gt = Gt[list(Gt.columns[1:][::-1]) + [Gt.columns[0]]]
-    with _box("hr_grid_sum"):
-        st.dataframe(Gt.style.format({"العدد": "{:,.0f}", "سعوديون": "{:,.0f}", "أجانب": "{:,.0f}", "إجمالي الرواتب": "{:,.0f}"}), hide_index=True, use_container_width=True,
-                     height=min(380, 38 + 35 * len(Gt)))
+    _wide(Gt, Gt.columns[0], key_font=1.2, height="46vh")
     if val != "الكل":
         D = D[D[col] == val]
     if q:
@@ -1162,15 +1122,13 @@ def _increases(A, unlocked, ym, build):
     G = G.sort_values("الإجمالي", ascending=False)
     G.loc["الإجمالي (الشركة)"] = G.sum()
     Gt = G.reset_index()
-    Gt = Gt[list(Gt.columns[1:][::-1]) + [Gt.columns[0]]]
     st.markdown("**الأثر على مستوى العقد / الشركة**")
     st.caption("لكل بند رقمان: أثر على الرصيد السابق يحدث مرة واحدة لأن المخصص يُحسب على آخر راتب فيرتفع المتراكم من سنوات الخدمة السابقة، "
                "وأثر 12 شهراً القادمة وهو ما يُضاف خلال السنة. "
                "استحقاق السنة القادمة لنهاية الخدمة = شهر كامل من الزيادة لمن تجاوزت خدمته خمس سنوات ونصف شهر لمن دونها، "
                "ومثله مخصص الإجازة = 30 يوماً من الزيادة لمن تجاوز خمس سنوات و21 يوماً لمن دونها. "
                "الرواتب نقدية، والإجازة ونهاية الخدمة مخصصات غير نقدية حتى تُصرف.")
-    with _box("hr_grid_incg"):
-        st.dataframe(Gt.style.format({c: "{:,.0f}" for c in Gt.columns if c != "العقد"}), hide_index=True, use_container_width=True, height=min(380, 38 + 35 * len(Gt)))
+    _wide(Gt, "العقد", key_font=1.2, height="52vh", totals=("الإجمالي (الشركة)",))
     # ---- تفصيل الموظفين
     st.markdown("**تصفية العمالة (تصنيف رئيسي: العقد، ثم تصنيفات فرعية)**")
     DIMS = {"المهنة": "المهنة", "الدور الوظيفي": "الدور الوظيفي", "مركز التكلفة / الموقع": "الموقع",
@@ -1339,11 +1297,9 @@ def _provisions(A, sett, build):
                            file_name="leave_provision.csv", mime="text/csv", key="hr_lv_dl")
         flag = pd.concat([neg.assign(السبب="رصيد سالب"), bad.assign(السبب="قيمة غير صالحة في الملف")])[["الرقم الوظيفي", "الاسم", "رصيد أيام", "السبب"]]
         if len(flag):
-            with _box("hr_grid_flag"):
-                st.dataframe(flag, hide_index=True, use_container_width=True)
+            _wide(flag, "الاسم", key_font=1.3, height="40vh")
         if len(miss):
-            with _box("hr_grid_miss"):
-                st.dataframe(miss[["الرقم الوظيفي", "الاسم", "المهنة"]], hide_index=True, use_container_width=True)
+            _wide(miss[["الاسم", "الرقم الوظيفي", "المهنة"]], "الاسم", key_font=1.3, height="40vh")
 
 
 def _act_settings(sett):
@@ -1487,11 +1443,8 @@ def _actuarial(A, sett, eosb, build):
     except Exception:
         st.download_button("⬇️ تنزيل الالتزام لكل موظف (CSV)", data=T.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"), file_name=f"Per_Employee_Liability_{vd.year}.csv", mime="text/csv", key="act_dl")
     with st.expander("أكبر 50 موظفاً من حيث الالتزام"):
-        with _box("hr_grid_act"):
-            Tt = T.head(50)
-            Tt = Tt[list(Tt.columns[::-1])]
-            st.dataframe(Tt.style.format({"الراتب الشهري": "{:,.0f}", "العمر": "{:.1f}", "سنوات الخدمة": "{:.1f}", "الالتزام": "{:,.0f}", "منافع متوقعة": "{:,.0f}", "تكلفة خدمة متوقعة": "{:,.0f}"}),
-                         hide_index=True, use_container_width=True)
+        _wide(T.head(50), "الاسم" if "الاسم" in T.columns else T.columns[0],
+              {"العمر": "{:,.1f}", "سنوات الخدمة": "{:,.1f}"}, height="60vh")
     st.caption("الفرضيات الثابتة (من تقرير 2025): التقاعد عند 60، معدل ترك الخدمة حسب سنوات الخدمة (0–5: 25%، 6–10: 15%، 11–19: 10%، 20+: 1%)، "
                "الاستقالة تستحق: أقل من سنتين لا شيء، 2–5 ثلث، 5–10 ثلثان، 10+ كاملاً. نظام العمل المادة 84.")
 
@@ -1528,6 +1481,4 @@ def _suggested(V, A, pay, ym, sett, build):
         X = T[cols].copy()
         if "نهاية العقد" in X.columns:
             X["نهاية العقد"] = X["نهاية العقد"].dt.strftime("%Y-%m-%d")
-        X = X[list(X.columns[::-1])].head(200)
-        with _box("hr_grid_" + key):
-            st.dataframe(X, hide_index=True, use_container_width=True, height=300)
+        _wide(X.head(200), "الاسم", {"أشهر منذ آخر إجازة": "{:,.1f}"}, key_font=1.3, height="42vh")
