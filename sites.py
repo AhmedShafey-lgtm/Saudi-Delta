@@ -163,6 +163,12 @@ def detect(raw, name=""):
         return "بونص"
     if any("حركة الاصناف" in s or "حركة الأصناف" in s or "حركة اصناف" in s or "حركة أصناف" in s for s in sheets):
         return "حركة الأصناف"
+    # جدول الربط المعتمد قد يكون في ورقة ثانية برأس أعمدة أسفل العنوان
+    for sh in wb.worksheets:
+        for r in sh.iter_rows(max_row=8, max_col=20, values_only=True):
+            t = {_norm(x) for x in r if x is not None}
+            if "كود بند الأعمال" in t and any(c.startswith("كود المادة") for c in t):
+                return "جدول الربط"
     ws = wb.worksheets[0]
     hdr = []
     for i, r in enumerate(ws.iter_rows(max_row=6, max_col=30, values_only=True)):
@@ -703,8 +709,17 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
     lvl = c2.radio("مستوى المقارنة", ["أمر العمل", "المستودع (شهري)"], horizontal=True, key="sv_blvl")
     only = c3.checkbox("إظهار الفروق فقط", value=True, key="sv_bonly")
     Bf = B[B["الشهر"].isin(msel)]
+    auto = False
     if not len(links):
-        _note("لم يُحدَّد بعد ربط بنود الأعمال بالمواد. افتح «جدول الربط» أدناه وحدِّد لكل بند المادة التي تُصرف عليه.")
+        links = auto_links(B, M, site)
+        auto = bool(len(links))
+    if auto:
+        _note(f"الربط مأخوذ آلياً من جدول الربط المعتمد: {len(links)} بنداً من أصل "
+              f"{Bf['رمز البند'].nunique()} في البونص. البنود غير المرتبطة بنود حفر وأسفلت وأعمال متنوعة "
+              "لا تُصرف عليها مواد عهدة. عدّل أي ارتباط من «جدول الربط» أدناه ثم احفظه ليَحِلّ محل الآلي.")
+    elif not len(links):
+        _note("لم يُحدَّد بعد ربط بنود الأعمال بالمواد، ولا يوجد جدول ربط معتمد. افتح «جدول الربط» أدناه "
+              "وحدِّد لكل بند المادة التي تُصرف عليه.")
     rows = []
     if len(links) and len(M):
         Mi = M[M["نوع المعاملة"] == ISSUE]
@@ -713,6 +728,10 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
             code, mat = str(L["رمز البند"]), str(L["كود المادة"])
             if not mat or mat == "nan":
                 continue
+            try:
+                fac = float(L.get("معامل") or 1.0) or 1.0
+            except Exception:
+                fac = 1.0
             bb = Bf[Bf["رمز البند"] == code]
             if lvl == "أمر العمل":
                 b = bb.groupby("أمر العمل")["الكمية"].sum()
@@ -722,7 +741,8 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
                 T = T[(T["البونص"] != 0) | (T["الصرف"] != 0)]
                 for wo, x in T.iterrows():
                     rows.append({"أمر العمل": wo, "رمز البند": code, "بند الأعمال": L.get("بند الأعمال", ""),
-                                 "المادة": L.get("المادة", ""), "البونص": x["البونص"],
+                                 "المادة": L.get("المادة", ""), "المعامل": fac,
+                                 "كمية البونص": x["البونص"], "البونص": x["البونص"] * fac,
                                  "صافي الصرف": x["الصرف"] - x["المرتجع"]})
             else:
                 for m in msel:
@@ -730,11 +750,14 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
                     sq = Mi[(Mi["كود الصنف"].astype(str) == mat) & (Mi["الشهر"] == m)]["الكمية"].sum()
                     rq = Mr[(Mr["كود الصنف"].astype(str) == mat) & (Mr["الشهر"] == m)]["الكمية"].sum()
                     rows.append({"الشهر": m, "رمز البند": code, "بند الأعمال": L.get("بند الأعمال", ""),
-                                 "المادة": L.get("المادة", ""), "البونص": bq, "صافي الصرف": sq - rq})
+                                 "المادة": L.get("المادة", ""), "المعامل": fac,
+                                 "كمية البونص": bq, "البونص": bq * fac, "صافي الصرف": sq - rq})
     T = pd.DataFrame(rows)
     if len(T):
-        T["الفرق"] = T["صافي الصرف"] - T["البونص"]
-        T["الحالة"] = np.where(T["الفرق"] > 0, "صرف أكبر من البونص", np.where(T["الفرق"] < 0, "صرف أقل من البونص", "مطابق"))
+        T = T.rename(columns={"البونص": "المتوقع من البونص"})
+        T["الفرق"] = T["صافي الصرف"] - T["المتوقع من البونص"]
+        T["الحالة"] = np.where(T["الفرق"] > 0, "صرف أكبر من المتوقع",
+                               np.where(T["الفرق"] < 0, "صرف أقل من المتوقع", "مطابق"))
         if "الشهر" in T.columns:
             T = T.sort_values(["رمز البند", "الشهر"])
             T["تراكمي الفرق"] = T.groupby("رمز البند")["الفرق"].cumsum()
@@ -768,6 +791,80 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
         _grid(G, "bq", 330, pin="الشهر")
 
 
+def parse_matlink(raw):
+    """جدول الربط المعتمد المرفوع: يقرأ ورقة الربط ويعيدها بأعمدة المنصة."""
+    wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    for sh in wb.worksheets:
+        rows = [list(r) for r in sh.iter_rows(values_only=True)]
+        h = None
+        for i, r in enumerate(rows[:10]):
+            t = [_norm(x) for x in r]
+            if "كود بند الأعمال" in t and any(str(c).startswith("كود المادة") for c in t):
+                h = i
+                break
+        if h is None:
+            continue
+        H = {_norm(v): j for j, v in enumerate(rows[h]) if v is not None}
+        kc = next((v for k, v in H.items() if k.startswith("كود المادة") and "ملف" not in k), None)
+        nc = next((v for k, v in H.items() if k.startswith("اسم المادة")), None)
+        out = []
+        for r in rows[h + 1:]:
+            g = lambda k: (_norm(r[H[k]]) if k in H and H[k] < len(r) and r[H[k]] is not None else "")
+            code = _norm(r[kc]) if kc is not None and kc < len(r) and r[kc] is not None else ""
+            work = g("كود بند الأعمال")
+            if not code or not work:
+                continue
+            try:
+                fac = float(g("المعامل") or 1.0) or 1.0
+            except Exception:
+                fac = 1.0
+            out.append({"كود المادة": code,
+                        "اسم المادة": (_norm(r[nc]) if nc is not None and nc < len(r) and r[nc] is not None else ""),
+                        "كود بند الأعمال": work, "بند الأعمال": g("بند الأعمال"),
+                        "نوع الارتباط": g("نوع الارتباط"), "المعامل": fac,
+                        "البند التجميعي": g("البند التجميعي"), "وصف البند التجميعي": g("وصف البند التجميعي"),
+                        "كود المادة في ملف الربط": g("كود المادة في ملف الربط"),
+                        "وصف المادة في ملف الربط": g("وصف المادة في ملف الربط"),
+                        "مصدر الربط": g("مصدر الربط"), "جيل الملف": g("جيل الملف")})
+        return pd.DataFrame(out)
+    return pd.DataFrame()
+
+
+def auto_links(bon, mov, site):
+    """ربط آلي لبنود البونص بالمواد من جدول الربط المعتمد، باختيار المادة الدالّة لكل بند.
+    الأولوية: ما صُرف فعلاً بالموقع، ثم الارتباط الحصري، ثم المادة الأخص (المرتبطة بأقل عدد بنود)."""
+    L = matlink()
+    if not len(L) or not len(bon):
+        return pd.DataFrame(columns=["الموقع", "رمز البند", "بند الأعمال", "كود المادة", "المادة", "معامل", "المصدر"])
+    L = L.copy()
+    L["كود بند الأعمال"] = L["كود بند الأعمال"].astype(str).str.strip()
+    B = bon[bon["الموقع"] == site]
+    items = B.groupby(["رمز البند", "بند الأعمال"], as_index=False)["الكمية"].sum()
+    issued = {}
+    if len(mov):
+        Mi = mov[(mov["الموقع"] == site) & (mov["نوع المعاملة"] == ISSUE)]
+        if len(Mi):
+            issued = Mi.assign(k=_ckey(Mi["كود الصنف"])).groupby("k")["الكمية"].sum().to_dict()
+    spec = L.groupby("كود المادة")["كود بند الأعمال"].nunique().to_dict()
+    out = []
+    for _, it in items.iterrows():
+        code = str(it["رمز البند"]).strip()
+        C = L[L["كود بند الأعمال"] == code]
+        if not len(C):
+            continue
+        C = C.assign(_q=_ckey(C["كود المادة"]).map(issued).fillna(0.0),
+                     _x=(C["نوع الارتباط"].astype(str) == "حصري").astype(int),
+                     _s=C["كود المادة"].map(spec).fillna(999))
+        C = C.assign(_h=(C["_q"] > 0).astype(int))
+        C = C.sort_values(["_h", "_x", "_s", "_q"], ascending=[False, False, True, False])
+        r = C.iloc[0]
+        out.append({"الموقع": site, "رمز البند": code, "بند الأعمال": it["بند الأعمال"],
+                    "كود المادة": r["كود المادة"], "المادة": r["اسم المادة"],
+                    "معامل": float(r["المعامل"] or 1.0) or 1.0,
+                    "المصدر": "ربط آلي" + ("" if r["_q"] > 0 else " (المادة غير مصروفة بالموقع)")})
+    return pd.DataFrame(out)
+
+
 def _link_editor(bon, mov, mp, site):
     """تحديد المادة المقابلة لكل بند أعمال، مع اقتراح آلي من تطابق الكميات."""
     B = bon[bon["الموقع"] == site]
@@ -788,7 +885,18 @@ def _link_editor(bon, mov, mp, site):
                                        "رمز البند": st.column_config.TextColumn(disabled=True),
                                        "بند الأعمال": st.column_config.TextColumn(disabled=True),
                                        "كمية البونص": st.column_config.NumberColumn(disabled=True, format="%.0f")})
-    c1, c2 = st.columns([1, 3])
+    c0, c1, c2 = st.columns([1.3, 1, 2])
+    if c0.button("⚡ تعبئة من جدول الربط المعتمد", key="sv_map_auto", use_container_width=True):
+        A = auto_links(bon, mov, site)
+        if not len(A):
+            st.warning("لا يوجد في جدول الربط المعتمد ما يقابل بنود البونص في هذا الموقع.")
+        else:
+            old = mp[mp["الموقع"] != site] if len(mp) else pd.DataFrame(columns=A.columns)
+            out = pd.concat([old, A.drop(columns=["المصدر"])], ignore_index=True)
+            st.session_state["sv_map"] = out
+            _save(out, F_MAP)
+            st.success(f"عُبِّئ {len(A)} ارتباطاً من جدول الربط المعتمد. راجعها وعدّل ما يلزم.")
+            st.rerun()
     if c1.button("💾 حفظ الربط", key="sv_map_save"):
         rows = []
         for _, r in ed.iterrows():
@@ -805,7 +913,8 @@ def _link_editor(bon, mov, mp, site):
         _save(out, F_MAP)
         st.success(f"تم حفظ {len(new)} ارتباطاً.")
         st.rerun()
-    c2.caption("اختر لكل بند المادة التي تُصرف عليه. البنود بلا ربط تُستثنى من المقارنة.")
+    c2.caption("اختر لكل بند المادة التي تُصرف عليه. البنود بلا ربط تُستثنى من المقارنة. "
+               "زر التعبئة يأخذ لكل بند المادة الدالّة من جدول الربط المعتمد.")
 
 
 def _wo_cost(bon, mov, sett, wo, pay, ipr, cpr, mp, cfg, site, build):
@@ -1204,6 +1313,15 @@ def _data_tab(unlocked, cfg):
                     st.session_state["sv_ipr"] = out
                     _save(out, F_IPR)
                     log.append(f"✅ {f.name}: أسعار الأصناف لموقع {site} — {len(p)} صنف.")
+                elif kind == "جدول الربط":
+                    p = parse_matlink(raw)
+                    if not len(p):
+                        log.append(f"⚠️ {f.name}: لم يُعثر على ورقة الربط (يلزم عمودا «كود المادة» و«كود بند الأعمال»).")
+                        continue
+                    p.to_csv(F_LNK, index=False, encoding="utf-8-sig")
+                    matlink.clear()
+                    log.append(f"✅ {f.name}: جدول الربط المعتمد — {len(p):,} سطراً، "
+                               f"{p['كود المادة'].nunique():,} مادة و{p['كود بند الأعمال'].nunique():,} بند أعمال.")
                 elif kind == "تصنيف الأصناف":
                     p = parse_item_class(raw)
                     _save(p, F_CLS)
