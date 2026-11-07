@@ -10,6 +10,7 @@ import streamlit as st
 
 import uitable as ut
 import store
+import teams as tmod
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EMP_FILE = os.path.join(HERE, "hr_emp.csv")
@@ -712,8 +713,12 @@ def render_hr(ctx, build_styled_table):
     emp, pay, inc, sett = _state()
     st.subheader("👷 الموارد البشرية")
     fbar = st.container()
-    tabs = st.tabs(["📊 الملخص والسعودة", "👥 استعراض العاملين", "💰 العلاوات", "📌 المخصصات المستحقة", "📐 نهاية الخدمة الاكتواري", "🧾 تقارير مقترحة", "⚙️ البيانات والإعدادات"])
-    t_sum, t_emp, t_inc, t_prov, t_act, t_sug, t_set = tabs
+    tabs = st.tabs(["📊 الملخص والسعودة", "👥 استعراض العاملين", "🧑‍🏭 فرق العمل", "💰 العلاوات",
+                    "📌 المخصصات المستحقة", "📐 نهاية الخدمة الاكتواري", "🧾 تقارير مقترحة",
+                    "⚙️ البيانات والإعدادات"])
+    t_sum, t_emp, t_team, t_inc, t_prov, t_act, t_sug, t_set = tabs
+    with t_team:
+        tmod.render_teams(ctx, build_styled_table, st.session_state.get("hr_emp"))
     with t_set:
         _data_tab(unlocked, emp, pay, sett)
     emp, pay, inc, sett = _state()
@@ -890,6 +895,8 @@ BK_FILES = {  # اسم داخل الأرشيف ← (مسار الملف على �
     "hr/roles.csv": (ROLE_FILE, "hr_role", True),
     "hr/jobroles.csv": (JOBROLE_FILE, "hr_jobrole", True),
     "hr/siteroles.csv": (SITEROLE_FILE, "hr_siterole", True),
+    "hr/teams.csv": (os.path.join(HERE, "hr_teams.csv"), "tm_m", True),
+    "hr/teams_extra.csv": (os.path.join(HERE, "hr_teams_extra.csv"), "tm_x", True),
     # التدفقات النقدية: التعديلات اليدوية على تصنيف السطور
     "cashflow/overrides.csv": (os.path.join(HERE, "cashflow_overrides.csv"), "cf_ovr", True),
     "cashflow/contractors.csv": (os.path.join(HERE, "cashflow_subs.csv"), "cf_subs", True),
