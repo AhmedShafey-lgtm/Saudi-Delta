@@ -1122,7 +1122,7 @@ def _wo_base(wo, mov, bon, site, build):
 
 
 def _data_tab(unlocked, cfg):
-    store.ui(unlocked)
+    store.ui(unlocked, "sites")
     st.markdown("---")
     _title("رفع البيانات والإعدادات")
     if not unlocked:

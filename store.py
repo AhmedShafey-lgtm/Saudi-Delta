@@ -174,8 +174,8 @@ def push():
     st.session_state["_store_state"] = s
 
 
-def ui(unlocked):
-    """لوحة حالة المزامنة داخل مركز البيانات."""
+def ui(unlocked, ns="hr"):
+    """لوحة حالة المزامنة داخل مركز البيانات. ns يميّز مفاتيح الأزرار بين التبويبات."""
     c = cfg()
     st.markdown("#### ☁️ استمرارية البيانات بعد إعادة النشر")
     if not c["on"]:
@@ -200,11 +200,11 @@ def ui(unlocked):
         st.info("المزامنة تلقائية. أدخل كلمة السر للتحكم اليدوي.")
         return
     a, b = st.columns(2)
-    if a.button("⬆️ حفظ البيانات في المستودع الآن", use_container_width=True, key="store_push"):
+    if a.button("⬆️ حفظ البيانات في المستودع الآن", use_container_width=True, key=f"store_push_{ns}"):
         st.session_state["_store_md5"] = {}
         push()
         st.success(status().get("msg", "تم."))
-    if b.button("⬇️ استرجاع البيانات من المستودع (يستبدل المحلي)", use_container_width=True, key="store_pull"):
+    if b.button("⬇️ استرجاع البيانات من المستودع (يستبدل المحلي)", use_container_width=True, key=f"store_pull_{ns}"):
         pull(force=True)
         st.cache_data.clear()
         st.success(status().get("msg", "تم."))

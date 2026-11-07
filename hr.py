@@ -837,7 +837,7 @@ def restore_backup(raw):
 
 
 def _backup_ui(unlocked):
-    store.ui(unlocked)
+    store.ui(unlocked, "hr")
     st.markdown("---")
     _title("النسخة الاحتياطية الشاملة")
     st.markdown('<div class="hr-note">ملف واحد يجمع: العلاوات المعتمدة والمقترحة، وإعدادات الموارد البشرية (التوطين والنطاق وقواعد المهن وفرضيات الاكتواري)، وبيانات البنوك، '
