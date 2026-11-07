@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 import uitable as ut
+import store
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EMP_FILE = os.path.join(HERE, "hr_emp.csv")
@@ -836,6 +837,8 @@ def restore_backup(raw):
 
 
 def _backup_ui(unlocked):
+    store.ui(unlocked)
+    st.markdown("---")
     _title("النسخة الاحتياطية الشاملة")
     st.markdown('<div class="hr-note">ملف واحد يجمع: العلاوات المعتمدة والمقترحة، وإعدادات الموارد البشرية (التوطين والنطاق وقواعد المهن وفرضيات الاكتواري)، وبيانات البنوك، '
                 'وملفات الموارد البشرية المرفوعة اختيارياً. احفظه بعد أي تعديل، واستعده بخطوة واحدة بعد كل إعادة تشغيل للاستضافة. '

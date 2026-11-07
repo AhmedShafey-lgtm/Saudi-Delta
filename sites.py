@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 import uitable as ut
+import store
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 F_BON = os.path.join(HERE, "st_bonus.csv.gz")
@@ -1121,6 +1122,8 @@ def _wo_base(wo, mov, bon, site, build):
 
 
 def _data_tab(unlocked, cfg):
+    store.ui(unlocked)
+    st.markdown("---")
     _title("رفع البيانات والإعدادات")
     if not unlocked:
         _note("أدخل كلمة مرور الرفع في الشريط الجانبي لتفعيل الرفع.")

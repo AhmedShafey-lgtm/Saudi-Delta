@@ -15,7 +15,8 @@ import numpy as np
 import plotly.express as px
 import io
 import importlib
-import exec_summary, zakat_calc, banks, cashflow, hr, sites, deck, share
+import exec_summary, zakat_calc, banks, cashflow, hr, sites, deck, share, store
+importlib.reload(store)
 importlib.reload(share)
 importlib.reload(exec_summary)
 importlib.reload(zakat_calc)
@@ -189,6 +190,9 @@ CONTRACTS_HIERARCHY = {
 # الشريط الجانبي: مركز رفع وتحديث البيانات
 # ==========================================
 import hmac, os
+
+# استرجاع ملفات البيانات من المستودع إن كانت مفقودة بعد إعادة النشر
+store.pull()
 
 # جلسة مشاركة: الرابط يحمل رمزاً فيُعرض تبويب واحد فقط بلا شريط جانبي ولا صلاحية تعديل
 SHARE = share.active()
@@ -1293,3 +1297,11 @@ try:
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 except Exception as _e:
     st.sidebar.warning(f"تعذر تجهيز ملف التصدير: {_e}")
+
+# ==========================================
+# حفظ ما تغيّر من ملفات البيانات في المستودع (يعمل فقط عند تفعيل المزامنة)
+# ==========================================
+try:
+    store.push()
+except Exception:
+    pass
