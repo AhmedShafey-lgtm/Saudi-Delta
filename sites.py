@@ -1295,18 +1295,33 @@ def render_sites(ctx, build_styled_table):
     ut.css()
     unlocked = bool(ctx.get("UP_UNLOCKED", False))
     bon, notes, mov, sett, wo, prd, ipr, cpr, pay, mp, cfg = _state()
-    st.subheader("📍 تقارير المواقع")
+    lock = str(ctx.get("SHARE_SITE", "") or "").strip()
+    st.subheader("📍 تقارير المواقع" + (f" — {lock}" if lock else ""))
     head = st.container()
-    tabs = st.tabs(["🧾 مراجعة البونص", "💰 تكلفة أوامر العمل", "📈 إنتاجية الموقع",
-                    "📦 انحرافات المواد", "🗂️ قاعدة أوامر العمل", "⚙️ البيانات والإعدادات"])
-    t_bon, t_cost, t_prod, t_mat, t_wo, t_set = tabs
-    with t_set:
-        _data_tab(unlocked, cfg)
+    names = ["🧾 مراجعة البونص", "💰 تكلفة أوامر العمل", "📈 إنتاجية الموقع",
+             "📦 انحرافات المواد", "🗂️ قاعدة أوامر العمل"]
+    if not lock:
+        names.append("⚙️ البيانات والإعدادات")
+    tabs = st.tabs(names)
+    t_bon, t_cost, t_prod, t_mat, t_wo = tabs[:5]
+    t_set = tabs[5] if len(tabs) > 5 else None
+    if t_set is not None:
+        with t_set:
+            _data_tab(unlocked, cfg)
     bon, notes, mov, sett, wo, prd, ipr, cpr, pay, mp, cfg = _state()
+    if lock:
+        # جلسة مشاركة مقيّدة بموقع: تُرشَّح كل البيانات قبل العرض فلا يظهر غيره
+        def _only(D):
+            return D[D["الموقع"] == lock] if (len(D) and "الموقع" in D.columns) else D
+        bon, notes, mov, sett, wo, prd, pay = (_only(x) for x in (bon, notes, mov, sett, wo, prd, pay))
     have = sorted(set(bon["الموقع"].unique()) | set(mov["الموقع"].unique() if len(mov) else []) |
                   set(sett["الموقع"].unique() if len(sett) else []))
     with head:
-        if have:
+        if lock:
+            site = lock
+            if have and lock not in have:
+                st.warning(f"لا توجد بيانات محمّلة لموقع {lock} بعد.")
+        elif have:
             site = st.selectbox("📍 الموقع", have, index=have.index(cfg["site"]) if cfg.get("site") in have else 0, key="sv_site")
         else:
             site = cfg.get("site", "الرياض")

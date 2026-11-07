@@ -15,7 +15,8 @@ import numpy as np
 import plotly.express as px
 import io
 import importlib
-import exec_summary, zakat_calc, banks, cashflow, hr, sites, deck
+import exec_summary, zakat_calc, banks, cashflow, hr, sites, deck, share
+importlib.reload(share)
 importlib.reload(exec_summary)
 importlib.reload(zakat_calc)
 importlib.reload(banks)
@@ -187,40 +188,52 @@ CONTRACTS_HIERARCHY = {
 # ==========================================
 # الشريط الجانبي: مركز رفع وتحديث البيانات
 # ==========================================
-st.sidebar.header("⚙️ مركز رفع وتحديث البيانات")
-
 import hmac, os
-def _upload_password():
-    try:
-        return str(st.secrets["UPLOAD_PASSWORD"]), True
-    except Exception:
-        pw = os.environ.get("UPLOAD_PASSWORD")
-        return (pw, True) if pw else ("Delta@2026", False)
 
-_pw_real, _pw_custom = _upload_password()
-_pw_in = st.sidebar.text_input("🔒 كلمة سر مركز التحديث", type="password", key="up_pw")
-UP_UNLOCKED = bool(_pw_in) and hmac.compare_digest(_pw_in.encode("utf-8"), _pw_real.encode("utf-8"))
-if UP_UNLOCKED:
-    st.sidebar.success("🔓 مركز التحديث مفتوح")
+# جلسة مشاركة: الرابط يحمل رمزاً فيُعرض تبويب واحد فقط بلا شريط جانبي ولا صلاحية تعديل
+SHARE = share.active()
+if SHARE:
+    UP_UNLOCKED = False
+    uploaded_tb = uploaded_proj_pl = None
+    uploaded_assign = []
+    deferred_rev_2025 = 14697741.0
 else:
-    st.sidebar.info("🔒 المركز مقفل: أدخل كلمة السر لرفع أو تعديل البيانات (العرض متاح للجميع).")
-if UP_UNLOCKED and not _pw_custom:
-    st.sidebar.warning("كلمة السر الافتراضية قيد الاستخدام. عيّن UPLOAD_PASSWORD في إعدادات Secrets لتغييرها.")
+    st.sidebar.header("⚙️ مركز رفع وتحديث البيانات")
+    def _upload_password():
+        try:
+            return str(st.secrets["UPLOAD_PASSWORD"]), True
+        except Exception:
+            pw = os.environ.get("UPLOAD_PASSWORD")
+            return (pw, True) if pw else ("Delta@2026", False)
 
-uploaded_tb = st.sidebar.file_uploader("1️⃣ رفع ميزان المراجعة العام (Excel/CSV)", type=["xlsx", "csv"], key="tb_up", disabled=not UP_UNLOCKED)
-uploaded_proj_pl = st.sidebar.file_uploader("2️⃣ رفع تحديث قوائم دخل المشاريع (Excel)", type=["xlsx"], key="proj_up", disabled=not UP_UNLOCKED)
-uploaded_assign = st.sidebar.file_uploader("3️⃣ رفع نموذج الإسناد والتنفيذ الشهري الموحد (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True, key="assign_up", disabled=not UP_UNLOCKED)
+    _pw_real, _pw_custom = _upload_password()
+    _pw_in = st.sidebar.text_input("🔒 كلمة سر مركز التحديث", type="password", key="up_pw")
+    UP_UNLOCKED = bool(_pw_in) and hmac.compare_digest(_pw_in.encode("utf-8"), _pw_real.encode("utf-8"))
+    if UP_UNLOCKED:
+        st.sidebar.success("🔓 مركز التحديث مفتوح")
+    else:
+        st.sidebar.info("🔒 المركز مقفل: أدخل كلمة السر لرفع أو تعديل البيانات (العرض متاح للجميع).")
+    if UP_UNLOCKED and not _pw_custom:
+        st.sidebar.warning("كلمة السر الافتراضية قيد الاستخدام. عيّن UPLOAD_PASSWORD في إعدادات Secrets لتغييرها.")
 
-st.sidebar.markdown("---")
-st.sidebar.header("🎯 إعدادات التنفيذ والإيراد المؤجل (2026)")
-deferred_rev_2025 = st.sidebar.number_input(
-    "الإيراد المؤجل المرحل من 2025 (ريال)",
-    value=14697741.0,
-    step=100000.0,
-    format="%.0f",
-    disabled=not UP_UNLOCKED,
-    key="deferred_in"
-)
+    uploaded_tb = st.sidebar.file_uploader("1️⃣ رفع ميزان المراجعة العام (Excel/CSV)", type=["xlsx", "csv"], key="tb_up", disabled=not UP_UNLOCKED)
+    uploaded_proj_pl = st.sidebar.file_uploader("2️⃣ رفع تحديث قوائم دخل المشاريع (Excel)", type=["xlsx"], key="proj_up", disabled=not UP_UNLOCKED)
+    uploaded_assign = st.sidebar.file_uploader("3️⃣ رفع نموذج الإسناد والتنفيذ الشهري الموحد (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True, key="assign_up", disabled=not UP_UNLOCKED)
+
+    st.sidebar.markdown("---")
+    st.sidebar.header("🎯 إعدادات التنفيذ والإيراد المؤجل (2026)")
+    deferred_rev_2025 = st.sidebar.number_input(
+        "الإيراد المؤجل المرحل من 2025 (ريال)",
+        value=14697741.0,
+        step=100000.0,
+        format="%.0f",
+        disabled=not UP_UNLOCKED,
+        key="deferred_in"
+    )
+
+    st.sidebar.markdown("---")
+    with st.sidebar.expander("🔗 روابط مشاركة التبويبات"):
+        share.admin(UP_UNLOCKED)
 
 # ==========================================
 # دالة تنسيق الجداول المحاسبية الملونة
@@ -491,6 +504,26 @@ EX_CTX = dict(
     UP_UNLOCKED=UP_UNLOCKED, bs_cash_26=30649316.0, bs_loans_26=16518837.0, bs_guar_margin_26=9550682.0,
     tb_loans_30_09=16608106.86, bs_def_fin_26=89277.85, tb_guar_margin_30_09=9550681.95,
 )
+
+# ==========================================
+# جلسة المشاركة: تبويب واحد فقط ثم إيقاف تنفيذ بقية الصفحة
+# ==========================================
+if SHARE:
+    cv.setup(SITES_DETAILED_DB, ASSETS_BY_SITE_DB, PAYROLL_BY_SITE_26,
+             PROJECTS_DB, base_regions, build_styled_table,
+             site_exec=ASSIGN_2026_BY_SITE, makkah_ops=MAKKAH_OPS_DB)
+    SHARE_RENDER = {
+        "deck": lambda c, b, v: deck.render_deck(c, b, v),
+        "exec": lambda c, b, v: ex_sum.render_exec_summary(c),
+        "kpis": lambda c, b, v: ex_sum.render_kpis(c, b),
+        "company": lambda c, b, v: v.render_company_tab(),
+        "zakat": lambda c, b, v: zakat_calc.render_zakat(c, b),
+        "banks": lambda c, b, v: banks.render_banks(c, b),
+        "cashflow": lambda c, b, v: cashflow.render_cashflow(c, b),
+        "sites": lambda c, b, v: sites.render_sites(c, b),
+        "hr": lambda c, b, v: hr.render_hr(c, b),
+    }
+    share.gate(SHARE, SHARE_RENDER, EX_CTX, build_styled_table, cv)
 
 # ==========================================
 # تقسيم شاشات المنصة (8 تبويبات متكاملة)

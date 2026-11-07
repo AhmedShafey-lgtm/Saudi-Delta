@@ -766,6 +766,8 @@ BK_FILES = {  # اسم داخل الأرشيف ← (مسار الملف على �
     "sites/data/item_prices.csv": (os.path.join(HERE, "st_itemprices.csv"), "sv_ipr", False),
     "sites/data/contract_prices.csv": (os.path.join(HERE, "st_contractprices.csv"), "sv_cpr", False),
     "sites/item_class.csv": (os.path.join(HERE, "st_itemclass.csv"), None, True),
+    # روابط مشاركة التبويبات
+    "share/links.csv": (os.path.join(HERE, "st_shares.csv"), None, True),
 }
 
 
