@@ -18,7 +18,7 @@ API = "https://api.github.com"
 
 # أنماط ملفات البيانات التي تُحفظ وتُسترجع (لا تشمل الكود ولا الملفات المرجعية الثابتة)
 PATTERNS = ["hr_*.csv", "hr_*.json", "st_*.csv", "st_*.csv.gz", "st_*.json",
-            "cashflow_*.csv", "cashflow_*.json", "bank_data.json"]
+            "cashflow_*.csv", "cashflow_*.json", "bank_data.json", "sites_matlink.csv"]
 SKIP = {"st_shares.csv"}          # تُزامَن أيضاً، لكن تُستثنى عند طلب عدم مشاركة الروابط
 MAX_MB = 45
 

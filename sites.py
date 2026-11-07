@@ -718,9 +718,13 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
     only = c3.checkbox("إظهار الفروق فقط", value=True, key="sv_bonly")
     Bf = B[B["الشهر"].isin(msel)]
     auto = False
+    L0 = matlink()
     if not len(links):
         links = auto_links(B, M, site)
         auto = bool(len(links))
+    if not len(links) and not len(L0):
+        _note("⚠️ جدول الربط المعتمد غير موجود على الخادم. ارفع ملف «ربط المواد ببنود الأعمال النهائي» "
+              "من «البيانات والإعدادات» (أو ضع sites_matlink.csv بجانب ملفات المنصة) ليعمل الربط الآلي.", )
     if auto:
         _note(f"الربط مأخوذ آلياً من جدول الربط المعتمد: {len(links)} بنداً من أصل "
               f"{Bf['رمز البند'].nunique()} في البونص. البنود غير المرتبطة بنود حفر وأسفلت وأعمال متنوعة "
@@ -915,7 +919,15 @@ def _link_editor(bon, mov, mp, site):
     if c0.button("⚡ تعبئة من جدول الربط المعتمد", key="sv_map_auto", use_container_width=True):
         A = auto_links(bon, mov, site)
         if not len(A):
-            st.warning("لا يوجد في جدول الربط المعتمد ما يقابل بنود البونص في هذا الموقع.")
+            L0 = matlink()
+            if not len(L0):
+                st.warning("جدول الربط المعتمد غير موجود. ارفع ملف «ربط المواد ببنود الأعمال النهائي» "
+                           "من تبويب «البيانات والإعدادات» أولاً.")
+            else:
+                ex = ", ".join(sorted(set(bon[bon["الموقع"] == site]["رمز البند"].astype(str)))[:5])
+                st.warning(f"جدول الربط المعتمد موجود ({len(L0):,} سطراً و{L0['كود بند الأعمال'].nunique():,} "
+                           f"بند عقد) لكن لا يقابل أكواد بنود البونص في هذا الموقع. أمثلة أكواد البونص: {ex}. "
+                           "إن كانت أرقاماً تسلسلية فأعد رفع ملفات البونص بعد التحديث.")
         else:
             old = mp[mp["الموقع"] != site] if len(mp) else pd.DataFrame(columns=A.columns)
             out = pd.concat([old, A.drop(columns=["المصدر"])], ignore_index=True)
@@ -1345,7 +1357,10 @@ def _data_tab(unlocked, cfg):
                         log.append(f"⚠️ {f.name}: لم يُعثر على ورقة الربط (يلزم عمودا «كود المادة» و«كود بند الأعمال»).")
                         continue
                     p.to_csv(F_LNK, index=False, encoding="utf-8-sig")
-                    matlink.clear()
+                    try:
+                        matlink.clear()
+                    except Exception:
+                        pass
                     log.append(f"✅ {f.name}: جدول الربط المعتمد — {len(p):,} سطراً، "
                                f"{p['كود المادة'].nunique():,} مادة و{p['كود بند الأعمال'].nunique():,} بند أعمال.")
                 elif kind == "تصنيف الأصناف":
@@ -1394,7 +1409,9 @@ def _data_tab(unlocked, cfg):
         ("item", "الرواتب", [str(len(pay)), "—"]),
         ("item", "أسعار الأصناف", [str(len(ipr)), "—"]),
         ("item", "أسعار بنود العقد", [str(len(cpr)), "—"]),
-        ("item", "جدول الربط", [str(len(mp)), "—"]),
+        ("item", "جدول الربط اليدوي (بند ← مادة)", [str(len(mp)), "—"]),
+        ("item", "جدول الربط المعتمد (المواد ببنود العقد)",
+         [f"{len(matlink()):,}", "موجود" if len(matlink()) else "غير مرفوع"]),
     ]
     st.table(_build_simple(rows, ["البيان", "عدد السطور", "التغطية"]))
     if len(bon) and (bon["الشهر"] == 0).any():
@@ -1461,8 +1478,10 @@ def render_sites(ctx, build_styled_table):
         def _only(D):
             return D[D["الموقع"] == lock] if (len(D) and "الموقع" in D.columns) else D
         bon, notes, mov, sett, wo, prd, pay = (_only(x) for x in (bon, notes, mov, sett, wo, prd, pay))
-    have = sorted(set(bon["الموقع"].unique()) | set(mov["الموقع"].unique() if len(mov) else []) |
-                  set(sett["الموقع"].unique() if len(sett) else []))
+    # كل موقع له أي بيانات: بونص أو حركة أصناف أو تصفية أو أوامر عمل أو إنتاجية أو رواتب
+    def _sites(D):
+        return set(D["الموقع"].dropna().astype(str).unique()) if (len(D) and "الموقع" in D.columns) else set()
+    have = sorted(_sites(bon) | _sites(mov) | _sites(sett) | _sites(wo) | _sites(prd) | _sites(pay))
     with head:
         if lock:
             site = lock
@@ -1473,6 +1492,14 @@ def render_sites(ctx, build_styled_table):
         else:
             site = cfg.get("site", "الرياض")
             st.warning("لا توجد بيانات محمّلة لأي موقع بعد، لذلك تظهر الأقسام فارغة. التفاصيل في كل قسم وفي تبويب «⚙️ البيانات والإعدادات».")
+    av = [n for n, D in (("البونص", bon), ("حركة الأصناف", mov), ("تصفية أوامر العمل", sett),
+                         ("أوامر العمل", wo), ("إنتاجية الموقع", prd), ("الرواتب", pay))
+          if len(D) and "الموقع" in D.columns and (D["الموقع"] == site).any()]
+    with head:
+        if av:
+            st.caption("المتاح لهذا الموقع: " + " · ".join(av))
+        else:
+            st.caption("لا توجد ملفات مرفوعة لهذا الموقع بعد.")
     with t_bon:
         _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build_styled_table)
     with t_cost:
