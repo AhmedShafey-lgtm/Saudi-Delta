@@ -64,17 +64,24 @@ st.markdown("""
         white-space: nowrap !important;
         background: #EEF2F7 !important;
         border: 1px solid #DCE3EC !important;
-        border-radius: 12px !important;
-        padding: 11px 20px !important;
+        border-radius: 14px !important;
+        padding: 15px 28px !important;
         margin: 0 !important;
         color: #334155 !important;
         transition: background .15s ease, color .15s ease, box-shadow .15s ease, transform .12s ease;
     }
     div[data-baseweb="tab-list"] button[role="tab"] * {
-        font-size: 1.06rem !important;
-        font-weight: 600 !important;
+        font-size: 1.24rem !important;
+        font-weight: 700 !important;
         color: inherit !important;
         letter-spacing: 0 !important;
+    }
+    /* التبويبات المتداخلة داخل تبويب رئيسي: أصغر درجة لتظهر الهرمية */
+    div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] button[role="tab"] {
+        padding: 10px 18px !important; border-radius: 10px !important;
+    }
+    div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] button[role="tab"] * {
+        font-size: 1.05rem !important; font-weight: 600 !important;
     }
     div[data-baseweb="tab-list"] button[role="tab"]:hover {
         background: #E2E8F0 !important;
@@ -93,16 +100,10 @@ st.markdown("""
     div[data-baseweb="tab-list"] button[role="tab"][aria-selected="true"]:focus {
         box-shadow: 0 6px 16px rgba(30, 58, 138, .30) !important;
     }
-    /* التبويبات الرئيسية أكبر وأبرز، وتُلفّ على سطرين بدل إخفاء بعضها خلف التمرير */
-    [class*="st-key-maintabs"] div[data-baseweb="tab-list"] {
-        gap: 10px !important; flex-wrap: wrap !important; overflow-x: visible !important;
-        border-bottom: 2px solid #E2E8F0 !important; padding-bottom: 14px !important;
-    }
-    [class*="st-key-maintabs"] div[data-baseweb="tab-list"] button[role="tab"] {
-        padding: 14px 26px !important; border-radius: 14px !important;
-    }
-    [class*="st-key-maintabs"] div[data-baseweb="tab-list"] button[role="tab"] * {
-        font-size: 1.22rem !important; font-weight: 700 !important;
+    /* شريط التبويبات الرئيسي: فاصل أسفله يميّزه عن التبويبات الفرعية */
+    div[data-baseweb="tab-list"] { border-bottom: 2px solid #E2E8F0 !important; padding-bottom: 14px !important; }
+    div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] {
+        border-bottom: 1px dashed #E2E8F0 !important; padding-bottom: 10px !important;
     }
     /* العناوين الرئيسية */
     h1, h1 * { font-size: 2.3rem !important; font-weight: 800 !important; color: #0B2A6F !important;
@@ -112,6 +113,16 @@ st.markdown("""
     h4, h4 * { font-size: 1.18rem !important; font-weight: 700 !important; color: #334155 !important; }
     h2, h3 { border-right: 5px solid #2563EB; padding-right: 12px; margin-top: .6rem !important; }
     h1 { border-bottom: 3px solid #E2E8F0; padding-bottom: 10px; }
+    /* عناوين داخل أشرطة ملوّنة: تبقى بيضاء بلا شريط جانبي حتى لا تختفي على الخلفية الداكنة */
+    .dk-head h1, .dk-head h2, .dk-head h3, .dk-head h4,
+    .dk-head h1 *, .dk-head h2 *, .dk-head h3 *, .dk-head h4 *,
+    .dk-head .sub, .sh-bar b, .sh-bar span {
+        color: #FFFFFF !important;
+    }
+    .dk-head h1, .dk-head h2, .dk-head h3, .dk-head h4 {
+        border: none !important; padding: 0 !important; margin: 0 !important; font-size: 1.5rem !important;
+    }
+    .sv-title, .hr-title, .tm-title, .sv-title *, .hr-title *, .tm-title * { color: #FFFFFF !important; }
     div[data-baseweb="tab-list"]::-webkit-scrollbar {
         height: 8px;
     }
@@ -581,15 +592,10 @@ if SHARE:
 # ==========================================
 # تقسيم شاشات المنصة (8 تبويبات متكاملة)
 # ==========================================
-_MAIN_TABS = ["🎞️ العرض التقديمي", "📈 الإدارة والمؤشرات", "📑 القوائم المالية",
-              "🧮 الزكاة وضريبة الدخل", "🏦 البنوك", "🏗️ المشاريع والعقود",
-              "📍 تقارير المواقع", "👷 الموارد البشرية"]
-try:                                   # حاوية بمفتاح لتكبير التبويبات الرئيسية عن الفرعية
-    with st.container(key="maintabs"):
-        _tabs_main = st.tabs(_MAIN_TABS)
-except TypeError:                      # إصدارات Streamlit التي لا تدعم key للحاوية
-    _tabs_main = st.tabs(_MAIN_TABS)
-grp_deck, grp_mgmt, grp_fs, grp_zk, grp_bank, grp_proj, grp_sites, grp_hr = _tabs_main
+grp_deck, grp_mgmt, grp_fs, grp_zk, grp_bank, grp_proj, grp_sites, grp_hr = st.tabs([
+    "🎞️ العرض التقديمي", "📈 الإدارة والمؤشرات", "📑 القوائم المالية",
+    "🧮 الزكاة وضريبة الدخل", "🏦 البنوك", "🏗️ المشاريع والعقود",
+    "📍 تقارير المواقع", "👷 الموارد البشرية"])
 with grp_deck:
     tab_deck = st.container()
 with grp_mgmt:

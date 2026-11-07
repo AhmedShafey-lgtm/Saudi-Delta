@@ -107,6 +107,47 @@ def _watcher(name, members):
     return s if len(s) >= 3 else ""
 
 
+# مرادفات أسماء الأعمدة بين المواقع، فلا يُشترط تطابق التسمية
+SYN = {
+    "الاسم": ("الاسم", "اسم الموظف", "اسم العامل", "الموظف", "العامل", "اسم الفرد"),
+    "المهنة": ("المهنه", "المهنة", "الوظيفه", "الوظيفة", "المسمي الوظيفي", "التخصص"),
+    "البونص": ("البونص", "بونص", "بونص الفرد", "البونص الشهري", "المستحق", "بونص الموظف"),
+    "بونص الفرقة": ("بونص الفرقه", "بونص الفريق", "اجمالي بونص الفرقه", "بونص المجموعه"),
+    "أجور التنفيذ": ("اجور التنفيذ الفعليه", "اجور التنفيذ", "قيمه التنفيذ", "قيمة التنفيذ",
+                     "التنفيذ الفعلي", "اجمالي التنفيذ", "الانتاجيه", "انتاجيه الفرقه"),
+    "الفرقة": ("الفرقه", "الفرقة", "اسم الفرقه", "الفريق", "اسم الفريق", "المجموعه"),
+}
+
+
+def _col(H, key):
+    """يعيد رقم العمود المطابق لأي مرادف للاسم."""
+    for a in SYN[key]:
+        if a in H:
+            return H[a]
+    for a in SYN[key]:
+        for k, j in H.items():
+            if a and a in k:
+                return j
+    return None
+
+
+def month_from_name(name):
+    """الشهر من اسم الملف: «سبتمبر 2026» أو 2026-09 أو 09-2026."""
+    t = _n(name)
+    m = re.search(r"(\d{4})[\-_/\s]?(\d{1,2})", t)
+    if m and 1 <= int(m.group(2)) <= 12:
+        return f"{m.group(1)}-{int(m.group(2)):02d}"
+    m = re.search(r"(\d{1,2})[\-_/\s](\d{4})", t)
+    if m and 1 <= int(m.group(1)) <= 12:
+        return f"{m.group(2)}-{int(m.group(1)):02d}"
+    for ar, no in AR_MONTHS.items():
+        if ar in t:
+            y = re.search(r"(20\d{2})", t)
+            if y:
+                return f"{y.group(1)}-{no:02d}"
+    return ""
+
+
 def parse_teams(raw):
     """بيان بونص الفرق: يعيد (الأفراد، البنود التجميعية، الشهر، اسم الورقة)."""
     wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
@@ -115,32 +156,37 @@ def parse_teams(raw):
         hdr = None
         for i, r in enumerate(rows[:14]):
             t = [_n(x) for x in r]
-            if "الاسم" in t and any(x.startswith("بونص") for x in t):
+            if any(a in t for a in SYN["الاسم"]) and any(x.startswith("بونص") for x in t):
                 hdr = i
                 break
         if hdr is None:
             continue
         H = {_n(v): j for j, v in enumerate(rows[hdr]) if v is not None}
         w = max(len(r) for r in rows) if rows else 0
-        cnt = {j: sum(1 for r in rows if j < len(r) and r[j] and "فرق" in _n(r[j])) for j in range(w)}
+        body = rows[hdr + 1:]
+        cnt = {j: sum(1 for r in body if j < len(r) and r[j] and "فرق" in _n(r[j])) for j in range(w)}
         jteam = max(cnt, key=cnt.get) if cnt and max(cnt.values()) > 1 else None
+        jn = _col(H, "الفرقة")
+        if jn is not None and cnt.get(jn, 0) > 1:
+            jteam = jn
         ym = ""
         for r in rows[:hdr + 1]:
             for v in r:
                 m = re.search(r"شهر\s+(\S+)\s+(\d{4})", str(v or ""))
                 if m and AR_MONTHS.get(_n(m.group(1))):
                     ym = f"{m.group(2)}-{AR_MONTHS[_n(m.group(1))]:02d}"
-        g = lambda r, k: (r[H[k]] if k in H and H[k] < len(r) else None)
+        C = {k: _col(H, k) for k in SYN}
+        g = lambda r, k: (r[C[k]] if C.get(k) is not None and C[k] < len(r) else None)
         rec, extra, team = [], [], ""
         for r in rows[hdr + 1:]:
             if jteam is not None and jteam < len(r) and r[jteam] and "فرق" in _n(r[jteam]):
                 team = str(r[jteam]).strip()
             nm = str(g(r, "الاسم") or "").strip()
-            job = str(g(r, "المهنه") or "").strip()
+            job = str(g(r, "المهنة") or "").strip()
             if not nm and not job:
                 continue
-            b, tb = _num(g(r, "البونص")), _num(g(r, "بونص الفرقه"))
-            wg = _num(g(r, "اجور التنفيذ الفعليه"))
+            b, tb = _num(g(r, "البونص")), _num(g(r, "بونص الفرقة"))
+            wg = _num(g(r, "أجور التنفيذ"))
             if any(k in _n(nm) or k in _n(job) for k in SKIP):
                 extra.append({"البند": nm or job, "البونص": b, "بونص الفرقة": tb, "أجور التنفيذ": wg})
                 team = ""          # صف تجميعي يفصل بين المجموعات فلا يُورَّث انتماؤها
@@ -221,9 +267,15 @@ def _upload(unlocked):
     if not unlocked:
         _note("أدخل كلمة سر مركز التحديث في الشريط الجانبي لتفعيل الرفع.", True)
         return
-    c1, c2 = st.columns([1, 2])
+    c1, c2, c3 = st.columns([1.1, 1, 1])
     site = c1.selectbox("الموقع", CENTRES, key="tm_site")
-    up = c2.file_uploader("ملفات بونص الفرق (Excel)", type=["xlsx", "xlsm"],
+    yr = c2.number_input("السنة (عند تعذّر قراءتها)", 2021, 2035, 2026, key="tm_y")
+    mo = c3.selectbox("الشهر (عند تعذّر قراءته)", ["يُقرأ من الملف"] + [MONTH_AR[i] for i in range(1, 13)],
+                      key="tm_m")
+    st.download_button("⬇️ تنزيل النموذج الموحّد لبيان بونص الفرق",
+                       _template(), "نموذج_بونص_الفرق.xlsx",
+                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="tm_tpl")
+    up = st.file_uploader("ملفات بونص الفرق (Excel)", type=["xlsx", "xlsm"],
                           accept_multiple_files=True, key="tm_up")
     if not up:
         return
@@ -239,7 +291,12 @@ def _upload(unlocked):
             log.append(("e", f"{f.name}: لم يُعثر على ورقة بونص الفرق (يلزم عمودا «الاسم» و«البونص»)."))
             continue
         if not ym:
-            log.append(("e", f"{f.name}: لم يتبيّن الشهر من عنوان الورقة (المتوقع «بونص شهر أكتوبر 2026»)."))
+            ym = month_from_name(f.name)
+        if not ym and mo != "يُقرأ من الملف":
+            ym = f"{int(yr)}-{AR_MONTHS[_n(mo)]:02d}"
+        if not ym:
+            log.append(("e", f"{f.name}: لم يتبيّن الشهر لا من عنوان الورقة ولا من اسم الملف. "
+                             "اختر الشهر والسنة أعلاه ثم أعد الرفع."))
             continue
         m["الموقع"], x["الموقع"] = site, site
         for c in T_COLS:
@@ -256,12 +313,64 @@ def _upload(unlocked):
         st.error(f"تعذّر الحفظ: {err}")
 
 
+def _template():
+    """نموذج موحّد لبيان بونص الفرق يُوزَّع على المواقع فتتوحّد التسمية والترتيب."""
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    cols = ["الفرقة", "الاسم", "المهنة", "البونص", "بونص الفرقة", "أجور التنفيذ"]
+    ex = [["فرقة أرضية رقم 1", "اسم المراقب", "مراقب أرضي", 500, 24796, 826540],
+          ["", "اسم الفرد الثاني", "سائق شيول", 300, "", ""],
+          ["", "اسم الفرد الثالث", "عامل أرضي", 300, "", ""],
+          ["فرقة هوائية رقم 1", "اسم المراقب", "مراقب هوائي", 550, 6000, 200000],
+          ["", "اسم الفرد الثاني", "فني هوائي", 400, "", ""]]
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        pd.DataFrame(ex, columns=cols).to_excel(w, sheet_name="بونص الفرق", index=False, startrow=1)
+        ws = w.sheets["بونص الفرق"]
+        ws.sheet_view.rightToLeft = True
+        ws["A1"] = "بونص شهر أكتوبر 2026"
+        ws["A1"].font = Font(name="Arial", size=13, bold=True, color="1F4E79")
+        for c in ws[2]:
+            c.font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+            c.fill = PatternFill("solid", fgColor="1F4E79")
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for j, c in enumerate(cols, 1):
+            ws.column_dimensions[get_column_letter(j)].width = {"الفرقة": 26, "الاسم": 30, "المهنة": 22}.get(c, 16)
+        ws.freeze_panes = "A3"
+        g = pd.DataFrame({"التعليمات": [
+            "١. عنوان الخلية A1 يحمل الشهر بصيغة «بونص شهر أكتوبر 2026»، وإن غاب يُقرأ الشهر من اسم الملف.",
+            "٢. اسم الفرقة يُكتب مرة واحدة في أول صف من صفوف الفرقة، ويُترك فارغاً لباقي أفرادها. لا تدمج الخلايا.",
+            "٣. سمِّ الفرقة بنوعها ورقمها واسم مراقبها، مثل: فرقة أرضية رقم 1 عرفان.",
+            "٤. «أجور التنفيذ» تُكتب أمام كل فرقة على حدة إن توفّرت؛ وإن سُجّلت لمجموعة كاملة فاكتبها "
+            "أمام أول فرقة فيها، وتوزّعها المنصة على فرق النوع نفسه بنسبة عدد الأفراد.",
+            "٥. الصفوف التجميعية (طوارئ، عمال الشركة، مقاولو الباطن، الورشة، الإجمالي) تُترك كما هي "
+            "وتُعرض في المنصة خارج الفرق.",
+            "٦. ترتيب الأعمدة غير ملزم، والمنصة تقبل مرادفات التسمية، لكن الالتزام بالنموذج يمنع أي خطأ قراءة."]})
+        g.to_excel(w, sheet_name="التعليمات", index=False)
+        ws2 = w.sheets["التعليمات"]
+        ws2.sheet_view.rightToLeft = True
+        ws2.column_dimensions["A"].width = 120
+        for r in ws2.iter_rows():
+            for c in r:
+                c.alignment = Alignment(horizontal="right", vertical="center", wrap_text=True)
+    return buf.getvalue()
+
+
 def _teams_table(M, build):
     G = M.groupby(["الموقع", "الشهر", "مفتاح الفرقة"], as_index=False).agg(
         **{"الفرقة": ("الفرقة", "first"), "النوع": ("النوع", "first"), "المراقب": ("المراقب", "first"),
            "عدد الأفراد": ("الاسم", "nunique"), "بونص الأفراد": ("البونص", "sum"),
            "بونص الفرقة": ("بونص الفرقة", "sum"), "أجور التنفيذ": ("أجور التنفيذ", "sum")})
-    G["الإنتاجية للفرد"] = np.where(G["عدد الأفراد"] > 0, G["أجور التنفيذ"] / G["عدد الأفراد"], 0)
+    # أجور التنفيذ تُسجَّل غالباً أمام فرقة واحدة من المجموعة، فتُوزَّع على فرق النوع نفسه بعدد الأفراد
+    k = ["الموقع", "الشهر", "النوع"]
+    tot = G.groupby(k)["أجور التنفيذ"].transform("sum")
+    mem = G.groupby(k)["عدد الأفراد"].transform("sum")
+    G["أجور التنفيذ (موزّعة)"] = np.where(mem > 0, tot * G["عدد الأفراد"] / mem, 0.0)
+    have = G.assign(_p=(G["أجور التنفيذ"] > 0).astype(int)).groupby(k)["_p"].transform("sum")
+    n_t = G.groupby(k)["مفتاح الفرقة"].transform("size")
+    G["توزيع"] = np.where((tot > 0) & (have < n_t), "موزّعة على النوع",
+                          np.where(tot > 0, "كما وردت", "بلا أجور مسجّلة"))
+    G["الإنتاجية للفرد"] = np.where(G["عدد الأفراد"] > 0, G["أجور التنفيذ (موزّعة)"] / G["عدد الأفراد"], 0)
     G["البونص للفرد"] = np.where(G["عدد الأفراد"] > 0, G["بونص الأفراد"] / G["عدد الأفراد"], 0)
     return G
 
@@ -277,8 +386,8 @@ def _overview(M, X, build):
     rows.append(("total", "الإجمالي", [f(s.الفرق.sum()), f(s.الأفراد.sum()),
                                        f(s["بونص الأفراد"].sum()), f(s["أجور التنفيذ"].sum())]))
     st.table(build(rows, ["نوع الفرقة", "عدد الفرق", "عدد الأفراد", "بونص الأفراد", "أجور التنفيذ"]))
-    _note("أجور التنفيذ الفعلية مسجّلة في الملف على مستوى المجموعة لا على كل فرقة، فتظهر مجمّعة أمام "
-          "الفرقة التي وردت عندها. الإنتاجية للفرد تُقرأ على هذا الأساس.")
+    _note("حين تُسجَّل أجور التنفيذ لمجموعة كاملة أمام فرقة واحدة، تُوزّعها المنصة على فرق النوع نفسه "
+          "بنسبة عدد الأفراد ليصبح لكل فرقة رقم إنتاجية. ولتسجيلها لكل فرقة على حدة استخدم النموذج الموحّد.")
     if len(X):
         Y = X.groupby("البند", as_index=False).agg(**{"بونص الفرقة": ("بونص الفرقة", "sum"),
                                                       "أجور التنفيذ": ("أجور التنفيذ", "sum")})
@@ -292,11 +401,14 @@ def _teams_view(M, build):
     ty = c1.multiselect("نوع الفرقة", sorted(G["النوع"].unique()), key="tm_ty")
     if ty:
         G = G[G["النوع"].isin(ty)]
-    srt = c2.radio("الترتيب", ["عدد الأفراد", "أجور التنفيذ", "بونص الأفراد", "الإنتاجية للفرد"],
+    srt = c2.radio("الترتيب", ["عدد الأفراد", "أجور التنفيذ (موزّعة)", "بونص الأفراد", "الإنتاجية للفرد"],
                    horizontal=True, key="tm_sort")
     V = G.sort_values(srt, ascending=False)[
         ["الفرقة", "النوع", "المراقب", "الموقع", "الشهر", "عدد الأفراد", "بونص الأفراد",
-         "البونص للفرد", "بونص الفرقة", "أجور التنفيذ", "الإنتاجية للفرد"]]
+         "البونص للفرد", "بونص الفرقة", "أجور التنفيذ", "أجور التنفيذ (موزّعة)",
+         "توزيع", "الإنتاجية للفرد"]]
+    _note("«أجور التنفيذ» كما وردت في الملف، و«الموزّعة» هي حصة الفرقة حين تُسجَّل الأجور لمجموعة كاملة "
+          "أمام فرقة واحدة: تُوزَّع على فرق النوع نفسه بنسبة عدد الأفراد. الإنتاجية للفرد محسوبة من الموزّعة.")
     ut.wide(V, "الفرقة", key_font=1.2, height="52vh")
     st.download_button("⬇️ تنزيل بيان الفرق (CSV)", V.to_csv(index=False).encode("utf-8-sig"),
                        "teams.csv", "text/csv", key="tm_dl_t")
