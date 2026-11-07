@@ -272,6 +272,7 @@ def parse_bonus(raw, site, fname=""):
         nr = [r for r in wb[sn[0]].iter_rows(min_row=2, values_only=True) if r and r[0]]
         N = pd.DataFrame([(site, mon, _wo(r[0]), r[1], r[2], r[3], r[4],
                            r[5] if len(r) > 5 else "", r[6] if len(r) > 6 else "", fname) for r in nr], columns=N.columns)
+    N.attrs["has_notes_sheet"] = bool(sn)
     return B, N
 
 
@@ -783,8 +784,13 @@ def _bonus_review(bon, notes, mov, sett, cpr, mp, cfg, site, build):
         srows.append(("total", "الإجمالي", [str(int(g.عدد.sum())), _fmt(g.صافي_الفرق.sum())]))
         st.table(build(srows, ["الحالة", "عدد السطور", "صافي الفرق"]))
         _grid(V, "bon", 430, pin="البند")
-        st.download_button("⬇️ تنزيل المقارنة (CSV)", T.to_csv(index=False).encode("utf-8-sig"),
-                           f"bonus_review_{site}.csv", "text/csv", key="sv_dl_bon")
+        d1, d2 = st.columns(2)
+        d1.download_button("⬇️ تنزيل المقارنة (Excel)", _review_book(T, links, site, msel, auto),
+                           f"bonus_review_{site}.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           use_container_width=True, key="sv_dl_bonx")
+        d2.download_button("⬇️ تنزيل المقارنة (CSV)", T.to_csv(index=False).encode("utf-8-sig"),
+                           f"bonus_review_{site}.csv", "text/csv", use_container_width=True, key="sv_dl_bon")
     with st.expander("🔗 جدول ربط بنود الأعمال بالمواد", expanded=not len(links)):
         _link_editor(bon, mov, mp, site)
     with st.expander("📝 ملاحظات محاسب المراجعة على البونص"):
@@ -840,6 +846,82 @@ def parse_matlink(raw):
                         "مصدر الربط": g("مصدر الربط"), "جيل الملف": g("جيل الملف")})
         return pd.DataFrame(out)
     return pd.DataFrame()
+
+
+def _review_book(T, links, site, msel, auto):
+    """ملف مراجعة البونص: المقارنة والملخص والتجميع حسب البند وجدول الربط المستخدم."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    BD = Border(*[Side(style="thin", color="D5DBE3")] * 4)
+
+    def sheet(w, name, df, title, note="", money=(), dec=()):
+        df.to_excel(w, sheet_name=name, index=False, startrow=2 if note else 1)
+        ws = w.sheets[name]
+        ws.sheet_view.rightToLeft = True
+        ws["A1"] = title
+        ws["A1"].font = Font(name="Arial", size=13, bold=True, color="1F4E79")
+        if note:
+            ws["A2"] = note
+            ws["A2"].font = Font(name="Arial", size=9, italic=True, color="595959")
+        hr = 3 if note else 2
+        for c in ws[hr]:
+            c.font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+            c.fill = PatternFill("solid", fgColor="1F4E79")
+            c.border = BD
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cols = list(df.columns)
+        for i in range(len(df)):
+            for j, cn in enumerate(cols, 1):
+                cell = ws.cell(hr + 1 + i, j)
+                cell.border = BD
+                cell.font = Font(name="Arial", size=10)
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                if cn in money:
+                    cell.number_format = "#,##0"
+                elif cn in dec:
+                    cell.number_format = "#,##0.000"
+                if cn == "الفرق" and isinstance(cell.value, (int, float)):
+                    if cell.value > 0:
+                        cell.font = Font(name="Arial", size=10, bold=True, color="B91C1C")
+                        cell.fill = PatternFill("solid", fgColor="FEE2E2")
+                    elif cell.value < 0:
+                        cell.font = Font(name="Arial", size=10, bold=True, color="92400E")
+                        cell.fill = PatternFill("solid", fgColor="FEF3C7")
+        for j, cn in enumerate(cols, 1):
+            ws.column_dimensions[get_column_letter(j)].width = {
+                "بند الأعمال": 40, "المادة": 40, "أمر العمل": 15, "رمز البند": 13,
+                "الحالة": 22, "المصدر": 34, "اسم المادة": 36}.get(cn, 15)
+        ws.freeze_panes = ws.cell(hr + 1, 1)
+        ws.auto_filter.ref = f"A{hr}:{get_column_letter(len(cols))}{hr + len(df)}"
+
+    MN = ("كمية البونص", "المتوقع من البونص", "صافي الصرف", "الفرق", "تراكمي الفرق")
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        g = T.groupby("الحالة", as_index=False).agg(**{"عدد السطور": ("الفرق", "size"),
+                                                       "صافي الفرق": ("الفرق", "sum")})
+        g.loc[len(g)] = ["الإجمالي", g["عدد السطور"].sum(), g["صافي الفرق"].sum()]
+        sheet(w, "الملخص", g, f"مراجعة البونص مقابل الصرف — {site}",
+              "الأشهر: " + "، ".join(map(str, msel)) +
+              (" · الربط آلي من جدول الربط المعتمد" if auto else " · الربط يدوي محفوظ"),
+              money=("عدد السطور", "صافي الفرق"))
+        by = T.groupby(["رمز البند", "بند الأعمال", "المادة"], as_index=False).agg(
+            **{"كمية البونص": ("كمية البونص", "sum"), "المتوقع من البونص": ("المتوقع من البونص", "sum"),
+               "صافي الصرف": ("صافي الصرف", "sum"), "الفرق": ("الفرق", "sum"),
+               "عدد السطور": ("الفرق", "size")}).sort_values("الفرق", key=abs, ascending=False)
+        sheet(w, "حسب البند", by, "الفروق مجمّعة على مستوى بند الأعمال",
+              "الفرق الموجب = صرف أكبر من المتوقع، والسالب = صرف أقل من المتوقع.", money=MN + ("عدد السطور",))
+        sheet(w, "المقارنة", T, "تفصيل المقارنة سطراً سطراً",
+              "المتوقع من البونص = كمية البونص × المعامل. الفرق = صافي الصرف − المتوقع.",
+              money=MN, dec=("المعامل",))
+        if len(links):
+            L = links.copy()
+            for c in ("الموقع",):
+                if c in L.columns:
+                    L = L.drop(columns=[c])
+            sheet(w, "جدول الربط المستخدم", L, "المادة المرتبطة بكل بند والمعامل المستخدم",
+                  "هذا هو الربط الذي بُنيت عليه المقارنة. عدّله من «جدول الربط» في المنصة عند الحاجة.",
+                  dec=("معامل",))
+    return buf.getvalue()
 
 
 def auto_links(bon, mov, site):
@@ -1299,7 +1381,11 @@ def _data_tab(unlocked, cfg):
                     b, n = parse_bonus(raw, site, f.name)
                     bons.append(b)
                     nots.append(n)
-                    log.append(f"✅ {f.name}: تقرير بونص — {len(b):,} سطر بند، {b['أمر العمل'].nunique()} أمر عمل، {len(n)} ملاحظة.")
+                    nmsg = (f"{len(n)} ملاحظة" if len(n) else
+                            ("ورقة الملاحظات فارغة" if n.attrs.get("has_notes_sheet")
+                             else "لا توجد ورقة «ملاحظات البونص» في هذا الملف"))
+                    log.append(f"✅ {f.name}: تقرير بونص — {len(b):,} سطر بند، "
+                               f"{b['أمر العمل'].nunique()} أمر عمل، {nmsg}.")
                 elif kind == "حركة الأصناف":
                     g = parse_moves(raw, site)
                     old = st.session_state["sv_mov"]
