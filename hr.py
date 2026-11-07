@@ -79,6 +79,47 @@ def _norm_job(s):
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
+def default_site_role(site):
+    """القاعدة الافتراضية للموقع: الصيانة وقراء العدادات إنتاجية بالكامل، والإدارة العامة إدارية بالكامل."""
+    s = _norm_job(site)
+    if not s:
+        return ""
+    if "صيانه" in s or "صيانة" in s or "قراء" in s or "عدادات" in s:
+        return PROD_ROLE
+    if s.startswith("الاداره") or s.startswith("الادارة") or "اداره عامه" in s or "ادارة عامة" in s:
+        return ADMIN_ROLE
+    return ""
+
+
+def site_role_map(sites):
+    """قاعدة الموقع المعتمدة: المحفوظ يغلب الافتراضي المستنتج من اسم الموقع."""
+    saved = st.session_state.get("hr_siterole")
+    m = {}
+    for s in sites:
+        d = default_site_role(s)
+        if d:
+            m[_norm_job(s)] = d
+    if saved is not None and len(saved):
+        for k, v in zip(saved["الموقع"], saved["الدور الوظيفي"]):
+            kk = _norm_job(k)
+            if str(v).strip() in ROLES:
+                m[kk] = str(v).strip()
+            else:
+                m.pop(kk, None)
+    return m
+
+
+def save_siteroles(df):
+    """يحفظ قاعدة الدور على مستوى الموقع."""
+    d = df[SITEROLE_COLS].dropna(subset=["الموقع"]).drop_duplicates("الموقع", keep="last")
+    st.session_state["hr_siterole"] = d.reset_index(drop=True)
+    try:
+        d.to_csv(SITEROLE_FILE, index=False, encoding="utf-8-sig")
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
 def save_jobroles(df):
     """يحفظ تصنيف الدور الوظيفي على مستوى المهنة."""
     d = df[JOBROLE_COLS].dropna(subset=["المهنة"]).drop_duplicates("المهنة", keep="last")
@@ -97,14 +138,16 @@ def parse_jobroles(raw):
         sheets = [_norm_cols(xl.parse(sh)) for sh in xl.sheet_names]
     except Exception:
         sheets = [_norm_cols(pd.read_csv(io.BytesIO(raw)))]
-    jobs, exc = None, None
+    jobs, exc, sites = None, None, None
     for d in sheets:
         c = set(d.columns)
         if jobs is None and {"الدور الوظيفي"} <= c and ({"المهنة"} <= c or {"المهنه"} <= c):
             jobs = d.rename(columns={"المهنه": "المهنة"})[["المهنة", "الدور الوظيفي"]]
         if exc is None and {"الرقم الوظيفي", "الدور الوظيفي"} <= c:
             exc = d[["الرقم الوظيفي", "الدور الوظيفي"]]
-    for d in (jobs, exc):
+        if sites is None and {"الموقع", "الدور الوظيفي"} <= c:
+            sites = d[["الموقع", "الدور الوظيفي"]]
+    for d in (jobs, exc, sites):
         if d is not None:
             d["الدور الوظيفي"] = d["الدور الوظيفي"].astype(str).str.strip()
     if jobs is not None:
@@ -112,7 +155,9 @@ def parse_jobroles(raw):
     if exc is not None:
         exc["الرقم الوظيفي"] = exc["الرقم الوظيفي"].astype(str).str.strip()
         exc = exc[exc["الدور الوظيفي"].isin(ROLES)]
-    return jobs, exc
+    if sites is not None:
+        sites = sites[sites["الدور الوظيفي"].isin(ROLES)]
+    return jobs, exc, sites
 
 
 def _box(key):
@@ -139,6 +184,9 @@ ROLE_COLS = ["الرقم الوظيفي", "الدور الوظيفي"]
 # تصنيف الدور على مستوى المهنة، وهو المرجع الذي يُرفع دفعة واحدة بدل تعديل كل موظف
 JOBROLE_FILE = os.path.join(HERE, "hr_jobroles.csv")
 JOBROLE_COLS = ["المهنة", "الدور الوظيفي"]
+# قاعدة الدور على مستوى الموقع، وهي أقوى من تصنيف المهنة وأضعف من استثناء الموظف
+SITEROLE_FILE = os.path.join(HERE, "hr_siteroles.csv")
+SITEROLE_COLS = ["الموقع", "الدور الوظيفي"]
 ADMIN_ROLE, PROD_ROLE = "إداري", "إنتاجي"
 ROLES = [ADMIN_ROLE, PROD_ROLE]
 # الدور الافتراضي لكل مجموعة مهنية، ويُعدَّل لأي موظف على حدة من «تعديل الدور الوظيفي»
@@ -396,7 +444,8 @@ def detect(raw):
             continue
         c = set(df.columns)
         if ({"المهنة", "الدور الوظيفي"} <= c or {"المهنه", "الدور الوظيفي"} <= c
-                or {"الرقم الوظيفي", "الدور الوظيفي"} <= c):
+                or {"الرقم الوظيفي", "الدور الوظيفي"} <= c
+                or {"الموقع", "الدور الوظيفي"} <= c):
             return "مهن"
         if {"الحالة", "تاريخ التعيين", "اخر اجازة"} <= c:
             return "موظفين"
@@ -511,6 +560,11 @@ def _state():
         else:
             x = None
         ss["hr_jobrole"] = x if x is not None else pd.DataFrame(columns=JOBROLE_COLS)
+    if "hr_siterole" not in ss:
+        x = _read_csv(SITEROLE_FILE)
+        if x is None or not {"الموقع", "الدور الوظيفي"} <= set(x.columns):
+            x = pd.DataFrame(columns=SITEROLE_COLS)
+        ss["hr_siterole"] = x.drop_duplicates("الموقع", keep="last")
     if "hr_eosb" not in ss:
         x = _read_csv(EOSB_FILE, dtype={"الكود": str})
         ss["hr_eosb"] = x if x is not None else pd.DataFrame(columns=EOSB_COLS)
@@ -592,6 +646,10 @@ def build_view(emp, pay, sett, cf, sal=None):
     if jr is not None and len(jr):
         jm = {_norm_job(k): v for k, v in zip(jr["المهنة"], jr["الدور الوظيفي"])}
         v = E["المهنة"].map(lambda x: jm.get(_norm_job(x)))
+        E["الدور الوظيفي"] = np.where(v.notna(), v, E["الدور الوظيفي"])
+    sm = site_role_map(sorted(set(E["الموقع"].dropna().astype(str))))
+    if sm:
+        v = E["الموقع"].map(lambda x: sm.get(_norm_job(x)))
         E["الدور الوظيفي"] = np.where(v.notna(), v, E["الدور الوظيفي"])
     ov = st.session_state.get("hr_role")
     if ov is not None and len(ov):
@@ -759,11 +817,14 @@ def _data_tab(unlocked, emp, pay, sett):
                     d.to_csv(PAY_FILE, index=False, encoding="utf-8-sig")
                     st.success(f"{f.name}: الرواتب: {len(d)} سطراً من {d['ym'].min()} إلى {d['ym'].max()}.")
                 elif kind == "مهن":
-                    jobs, exc = parse_jobroles(raw)
+                    jobs, exc, sroles = parse_jobroles(raw)
                     msg = []
                     if jobs is not None and len(jobs):
                         ok, err = save_jobroles(jobs)
                         msg.append(f"{len(jobs)} مهنة" if ok else f"تعذّر حفظ المهن: {err}")
+                    if sroles is not None and len(sroles):
+                        ok, err = save_siteroles(sroles)
+                        msg.append(f"{len(sroles)} موقع" if ok else f"تعذّر حفظ المواقع: {err}")
                     if exc is not None and len(exc):
                         cur = st.session_state.get("hr_role")
                         cur = cur if cur is not None else pd.DataFrame(columns=ROLE_COLS)
@@ -828,6 +889,7 @@ BK_FILES = {  # اسم داخل الأرشيف ← (مسار الملف على �
     "hr/data/salary_snapshot.csv": (SAL_FILE, "hr_sal", False),
     "hr/roles.csv": (ROLE_FILE, "hr_role", True),
     "hr/jobroles.csv": (JOBROLE_FILE, "hr_jobrole", True),
+    "hr/siteroles.csv": (SITEROLE_FILE, "hr_siterole", True),
     # التدفقات النقدية: التعديلات اليدوية على تصنيف السطور
     "cashflow/overrides.csv": (os.path.join(HERE, "cashflow_overrides.csv"), "cf_ovr", True),
     "cashflow/contractors.csv": (os.path.join(HERE, "cashflow_subs.csv"), "cf_subs", True),
@@ -1038,17 +1100,19 @@ def _summary(A, pay, sett, ym, build, A_full=None):
             st.table(build(rows, ["الفئة", "على رأس العمل", "في إجازة", "نسبة الإجازة"]))
 
 
-def _jobrole_book(X):
-    """ملف Excel بورقتين: المهن بقائمة منسدلة، واستثناءات الموظفين، جاهز للتعبئة وإعادة الرفع."""
+def _jobrole_book(X, S=None):
+    """ملف Excel بثلاث أوراق: المهن، وقواعد المواقع، واستثناءات الموظفين — جاهز للتعبئة وإعادة الرفع."""
     from openpyxl.worksheet.datavalidation import DataValidation
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         X.to_excel(w, sheet_name="المهن", index=False)
+        S = S if S is not None else pd.DataFrame(columns=["الموقع", "عدد الموظفين", "الدور الوظيفي"])
+        S.to_excel(w, sheet_name="المواقع", index=False)
         pd.DataFrame(columns=["الرقم الوظيفي", "الاسم", "الدور الوظيفي", "سبب الاستثناء"]).to_excel(
             w, sheet_name="استثناءات", index=False)
-        for name, n in (("المهن", len(X)), ("استثناءات", 300)):
+        for name, n in (("المهن", len(X)), ("المواقع", max(len(S), 40)), ("استثناءات", 300)):
             ws = w.sheets[name]
             ws.sheet_view.rightToLeft = True
             hdr = [c.value for c in ws[1]]
@@ -1065,7 +1129,7 @@ def _jobrole_book(X):
                     ws.cell(r, j).fill = PatternFill("solid", fgColor="FFF2CC")
             for k, c in enumerate(hdr, 1):
                 ws.column_dimensions[get_column_letter(k)].width = \
-                    {"المهنة": 38, "المجموعة": 20, "مصدر التصنيف": 20, "الاسم": 34,
+                    {"المهنة": 38, "المجموعة": 20, "مصدر التصنيف": 20, "الاسم": 34, "الموقع": 30,
                      "سبب الاستثناء": 34, "إجمالي الرواتب": 16}.get(c, 15)
             ws.freeze_panes = "A2"
     return buf.getvalue()
@@ -1088,17 +1152,28 @@ def _jobrole_ref(D):
     c1, c2 = st.columns(2)
     cols = ["المهنة", "المجموعة", "عدد الموظفين", "إجمالي الرواتب", "الدور الحالي", "مصدر التصنيف", "الدور الوظيفي"]
     X = G.rename(columns={"الدور المعتمد": "الدور الوظيفي"})[cols]
-    c1.download_button("⬇️ تنزيل قائمة المهن لتحديد الدور (Excel)",
-                       _jobrole_book(X), "job_roles_reference.xlsx",
+    sm = site_role_map(sorted(set(D["الموقع"].dropna().astype(str))))
+    S = D.groupby("الموقع", as_index=False).agg(**{"عدد الموظفين": ("الرقم الوظيفي", "nunique")})
+    S["الدور الوظيفي"] = S["الموقع"].map(lambda x: sm.get(_norm_job(x), ""))
+    S = S.sort_values("عدد الموظفين", ascending=False)
+    c1.download_button("⬇️ تنزيل مرجع المهن والمواقع (Excel)",
+                       _jobrole_book(X, S), "job_roles_reference.xlsx",
                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                        use_container_width=True, key="hr_jr_dl")
-    if c2.button("🗑️ إلغاء مرجع المهن المحفوظ", use_container_width=True, key="hr_jr_clear"):
+    if c2.button("🗑️ إلغاء المرجع المحفوظ (المهن والمواقع)", use_container_width=True, key="hr_jr_clear"):
         save_jobroles(pd.DataFrame(columns=JOBROLE_COLS))
+        save_siteroles(pd.DataFrame(columns=SITEROLE_COLS))
         st.rerun()
-    st.caption("املأ عمود «الدور الوظيفي» بـ «إداري» أو «إنتاجي» لكل مهنة ثم ارفع الملف من «البيانات والإعدادات». "
-               "وللاستثناءات أضف في الملف ورقة ثانية بعمودَي «الرقم الوظيفي» و«الدور الوظيفي» — "
-               "الاستثناء يعلو على تصنيف المهنة. المهن التي تتركها فارغة تبقى على ما هي عليه.")
-    _wide(X, "المهنة", {"إجمالي الرواتب": "{:,.0f}"}, key_font=1.15, height="34vh")
+    st.caption("ترتيب الأولوية: استثناء الموظف ← قاعدة الموقع ← تصنيف المهنة ← الافتراضي حسب المجموعة. "
+               "املأ الورقة التي تناسبك في الملف المنزَّل ثم ارفعه من «البيانات والإعدادات»؛ وما تتركه فارغاً يبقى كما هو. "
+               "افتراضياً كل مواقع الصيانة وقراء العدادات إنتاجية بالكامل، والإدارة العامة إدارية بالكامل.")
+    t1, t2 = st.tabs(["المهن", "المواقع"])
+    with t1:
+        _wide(X, "المهنة", {"إجمالي الرواتب": "{:,.0f}"}, key_font=1.15, height="34vh")
+    with t2:
+        V = S.copy()
+        V["الدور الوظيفي"] = V["الدور الوظيفي"].replace("", "— حسب المهنة —")
+        _wide(V, "الموقع", key_font=1.15, height="34vh")
 
 
 def _role_editor(D, unlocked=True):
