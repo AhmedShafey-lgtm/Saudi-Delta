@@ -1045,9 +1045,9 @@ def _jobrole_book(X):
     from openpyxl.utils import get_column_letter
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        X.to_excel(w, "المهن", index=False)
+        X.to_excel(w, sheet_name="المهن", index=False)
         pd.DataFrame(columns=["الرقم الوظيفي", "الاسم", "الدور الوظيفي", "سبب الاستثناء"]).to_excel(
-            w, "استثناءات", index=False)
+            w, sheet_name="استثناءات", index=False)
         for name, n in (("المهن", len(X)), ("استثناءات", 300)):
             ws = w.sheets[name]
             ws.sheet_view.rightToLeft = True

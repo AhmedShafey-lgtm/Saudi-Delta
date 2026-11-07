@@ -48,21 +48,70 @@ st.markdown("""
     li {
         text-align: right !important;
     }
-    /* شريط التبويبات: تمرير أفقي ظاهر عند كثرة التبويبات */
+    /* شريط التبويبات: تُلفّ على أكثر من سطر فتظهر كلها بلا تمرير مخفي */
     div[data-baseweb="tab-list"] {
         direction: rtl !important;
         justify-content: flex-start !important;
-        flex-wrap: nowrap !important;
-        overflow-x: auto !important;
-        overflow-y: hidden !important;
+        flex-wrap: wrap !important;
+        overflow: visible !important;
         padding-bottom: 8px !important;
-        scrollbar-width: thin;
-        scrollbar-color: #1E3A8A #E5E7EB;
     }
+    /* التبويبات كمفاتيح: الخامل باهت والمختار ساطع بخلفية كحلية وظل */
+    div[data-baseweb="tab-list"] { gap: 8px !important; padding: 8px 2px 12px !important; }
+    div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { display: none !important; }
     div[data-baseweb="tab-list"] button[role="tab"] {
         flex: 0 0 auto !important;
         white-space: nowrap !important;
+        background: #EEF2F7 !important;
+        border: 1px solid #DCE3EC !important;
+        border-radius: 12px !important;
+        padding: 11px 20px !important;
+        margin: 0 !important;
+        color: #334155 !important;
+        transition: background .15s ease, color .15s ease, box-shadow .15s ease, transform .12s ease;
     }
+    div[data-baseweb="tab-list"] button[role="tab"] * {
+        font-size: 1.06rem !important;
+        font-weight: 600 !important;
+        color: inherit !important;
+        letter-spacing: 0 !important;
+    }
+    div[data-baseweb="tab-list"] button[role="tab"]:hover {
+        background: #E2E8F0 !important;
+        color: #0B2A6F !important;
+        transform: translateY(-1px);
+    }
+    div[data-baseweb="tab-list"] button[role="tab"][aria-selected="true"] {
+        background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%) !important;
+        border-color: #1E3A8A !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 6px 16px rgba(30, 58, 138, .30);
+        transform: translateY(-1px);
+    }
+    div[data-baseweb="tab-list"] button[role="tab"][aria-selected="true"] * { color: #FFFFFF !important; }
+    div[data-baseweb="tab-list"] button[role="tab"]:focus { outline: none !important; box-shadow: none; }
+    div[data-baseweb="tab-list"] button[role="tab"][aria-selected="true"]:focus {
+        box-shadow: 0 6px 16px rgba(30, 58, 138, .30) !important;
+    }
+    /* التبويبات الرئيسية أكبر وأبرز، وتُلفّ على سطرين بدل إخفاء بعضها خلف التمرير */
+    [class*="st-key-maintabs"] div[data-baseweb="tab-list"] {
+        gap: 10px !important; flex-wrap: wrap !important; overflow-x: visible !important;
+        border-bottom: 2px solid #E2E8F0 !important; padding-bottom: 14px !important;
+    }
+    [class*="st-key-maintabs"] div[data-baseweb="tab-list"] button[role="tab"] {
+        padding: 14px 26px !important; border-radius: 14px !important;
+    }
+    [class*="st-key-maintabs"] div[data-baseweb="tab-list"] button[role="tab"] * {
+        font-size: 1.22rem !important; font-weight: 700 !important;
+    }
+    /* العناوين الرئيسية */
+    h1, h1 * { font-size: 2.3rem !important; font-weight: 800 !important; color: #0B2A6F !important;
+               letter-spacing: -.01em; }
+    h2, h2 * { font-size: 1.75rem !important; font-weight: 700 !important; color: #1E3A8A !important; }
+    h3, h3 * { font-size: 1.38rem !important; font-weight: 700 !important; color: #1E3A8A !important; }
+    h4, h4 * { font-size: 1.18rem !important; font-weight: 700 !important; color: #334155 !important; }
+    h2, h3 { border-right: 5px solid #2563EB; padding-right: 12px; margin-top: .6rem !important; }
+    h1 { border-bottom: 3px solid #E2E8F0; padding-bottom: 10px; }
     div[data-baseweb="tab-list"]::-webkit-scrollbar {
         height: 8px;
     }
@@ -532,16 +581,15 @@ if SHARE:
 # ==========================================
 # تقسيم شاشات المنصة (8 تبويبات متكاملة)
 # ==========================================
-grp_deck, grp_mgmt, grp_fs, grp_zk, grp_bank, grp_proj, grp_sites, grp_hr = st.tabs([
-    "🎞️ العرض التقديمي",
-    "📈 الإدارة والمؤشرات",
-    "📑 القوائم المالية",
-    "🧮 الزكاة وضريبة الدخل",
-    "🏦 البنوك",
-    "🏗️ المشاريع والعقود",
-    "📍 تقارير المواقع",
-    "👷 الموارد البشرية",
-])
+_MAIN_TABS = ["🎞️ العرض التقديمي", "📈 الإدارة والمؤشرات", "📑 القوائم المالية",
+              "🧮 الزكاة وضريبة الدخل", "🏦 البنوك", "🏗️ المشاريع والعقود",
+              "📍 تقارير المواقع", "👷 الموارد البشرية"]
+try:                                   # حاوية بمفتاح لتكبير التبويبات الرئيسية عن الفرعية
+    with st.container(key="maintabs"):
+        _tabs_main = st.tabs(_MAIN_TABS)
+except TypeError:                      # إصدارات Streamlit التي لا تدعم key للحاوية
+    _tabs_main = st.tabs(_MAIN_TABS)
+grp_deck, grp_mgmt, grp_fs, grp_zk, grp_bank, grp_proj, grp_sites, grp_hr = _tabs_main
 with grp_deck:
     tab_deck = st.container()
 with grp_mgmt:
