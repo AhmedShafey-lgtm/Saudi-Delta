@@ -217,7 +217,15 @@ def parse_bonus(raw, site, fname=""):
     if h is None:
         return pd.DataFrame(), pd.DataFrame()
     top, sub = rows[h], rows[h + 1]
-    codes = next((r for r in rows[h: h + 8] if r and r[0] and str(r[0]).startswith("رقم البند")), [None] * 80)
+    # صف أكواد البنود: يُرجَّح الصف الذي أغلب قيمه أكواد عقد (7–10 أرقام) لا صف الترقيم التسلسلي
+    def _ncodes(r):
+        return sum(1 for v in (r or []) if v is not None and re.fullmatch(r"\d{7,10}", str(v).strip()))
+    cand = [r for r in rows[h: h + 10] if r and _ncodes(r) >= 3]
+    if cand:
+        codes = max(cand, key=_ncodes)
+    else:
+        codes = next((r for r in rows[h: h + 8] if r and r[0] and str(r[0]).startswith("رقم البند")),
+                     [None] * 80)
     grp, cur = [None] * 80, None
     for j in range(80):
         if top[j]:
@@ -846,10 +854,28 @@ def auto_links(bon, mov, site):
         if len(Mi):
             issued = Mi.assign(k=_ckey(Mi["كود الصنف"])).groupby("k")["الكمية"].sum().to_dict()
     spec = L.groupby("كود المادة")["كود بند الأعمال"].nunique().to_dict()
+    # فهرس بالاسم: يُستعمل حين لا تحمل بنود البونص أكواد العقد
+    NAME = {}
+    for c, d in zip(L["كود بند الأعمال"], L["بند الأعمال"]):
+        t = _ar_tok(d)
+        if t:
+            NAME.setdefault(c, t)
     out = []
     for _, it in items.iterrows():
         code = str(it["رمز البند"]).strip()
         C = L[L["كود بند الأعمال"] == code]
+        how = ""
+        if not len(C):
+            t = _ar_tok(str(it["بند الأعمال"]).replace("|", " "))
+            best, bs = None, 0.0
+            if t:
+                for c, u in NAME.items():
+                    sc = len(t & u) / len(t | u)
+                    if sc > bs:
+                        bs, best = sc, c
+            if best and bs >= 0.34:
+                C = L[L["كود بند الأعمال"] == best]
+                how = f" (مطابقة بالاسم {bs * 100:.0f}%)"
         if not len(C):
             continue
         C = C.assign(_q=_ckey(C["كود المادة"]).map(issued).fillna(0.0),
@@ -861,7 +887,7 @@ def auto_links(bon, mov, site):
         out.append({"الموقع": site, "رمز البند": code, "بند الأعمال": it["بند الأعمال"],
                     "كود المادة": r["كود المادة"], "المادة": r["اسم المادة"],
                     "معامل": float(r["المعامل"] or 1.0) or 1.0,
-                    "المصدر": "ربط آلي" + ("" if r["_q"] > 0 else " (المادة غير مصروفة بالموقع)")})
+                    "المصدر": "ربط آلي" + how + ("" if r["_q"] > 0 else " · المادة غير مصروفة بالموقع")})
     return pd.DataFrame(out)
 
 

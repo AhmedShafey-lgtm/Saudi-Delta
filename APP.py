@@ -116,12 +116,17 @@ st.markdown("""
     /* عناوين داخل أشرطة ملوّنة: تبقى بيضاء بلا شريط جانبي حتى لا تختفي على الخلفية الداكنة */
     .dk-head h1, .dk-head h2, .dk-head h3, .dk-head h4,
     .dk-head h1 *, .dk-head h2 *, .dk-head h3 *, .dk-head h4 *,
-    .dk-head .sub, .sh-bar b, .sh-bar span {
+    .dk-cover h1, .dk-cover h2, .dk-cover h3, .dk-cover h1 *, .dk-cover h2 *, .dk-cover h3 *,
+    .dk-head .sub, .dk-cover .meta, .sh-bar b, .sh-bar span {
         color: #FFFFFF !important;
     }
     .dk-head h1, .dk-head h2, .dk-head h3, .dk-head h4 {
         border: none !important; padding: 0 !important; margin: 0 !important; font-size: 1.5rem !important;
     }
+    .dk-cover h1, .dk-cover h2, .dk-cover h3 {
+        border: none !important; padding: 0 !important; margin: 0 0 6px 0 !important; font-size: 2.1rem !important;
+    }
+    .dk-cover .tag, .dk-cover .tag * { color: #E7C84F !important; }
     .sv-title, .hr-title, .tm-title, .sv-title *, .hr-title *, .tm-title * { color: #FFFFFF !important; }
     div[data-baseweb="tab-list"]::-webkit-scrollbar {
         height: 8px;
