@@ -718,7 +718,10 @@ def render_hr(ctx, build_styled_table):
                     "⚙️ البيانات والإعدادات"])
     t_sum, t_emp, t_team, t_inc, t_prov, t_act, t_sug, t_set = tabs
     with t_team:
-        tmod.render_teams(ctx, build_styled_table, st.session_state.get("hr_emp"))
+        try:
+            tmod.render_teams(ctx, build_styled_table, st.session_state.get("hr_emp"))
+        except Exception as _e:            # خطأ في فرق العمل لا يُسقط بقية تبويب الموارد البشرية
+            st.error(f"تعذّر عرض فرق العمل: {_e}")
     with t_set:
         _data_tab(unlocked, emp, pay, sett)
     emp, pay, inc, sett = _state()

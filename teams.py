@@ -271,7 +271,7 @@ def _upload(unlocked):
     site = c1.selectbox("الموقع", CENTRES, key="tm_site")
     yr = c2.number_input("السنة (عند تعذّر قراءتها)", 2021, 2035, 2026, key="tm_y")
     mo = c3.selectbox("الشهر (عند تعذّر قراءته)", ["يُقرأ من الملف"] + [MONTH_AR[i] for i in range(1, 13)],
-                      key="tm_m")
+                      key="tm_mon")
     st.download_button("⬇️ تنزيل النموذج الموحّد لبيان بونص الفرق",
                        _template(), "نموذج_بونص_الفرق.xlsx",
                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="tm_tpl")
